@@ -218,7 +218,12 @@ set_origin() {
     ref=$(sed -n 's/^container-image-reference=//p' "$dst" | head -1)
     if [[ $ref != *ghcr.io/* ]]; then
         echo "WARNING: bootc origin is '${ref:-<none>}', not a ghcr image — OTA updates will NOT work on this install (expected for a locally-built image)." >&2
+        return
     fi
+    # Force the signed reference so the internal install verifies the cosign
+    # signature on upgrade, even if the booted origin was still unverified.
+    bare=${ref#*:}; bare=${bare#docker://}
+    sed -i "s|^container-image-reference=.*|container-image-reference=ostree-image-signed:docker://${bare}|" "$dst"
 }
 
 seed_kernel() {

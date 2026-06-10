@@ -1,34 +1,44 @@
 #!/bin/bash
-# Steam UI "OS Update Channel" hook (invoked as steamos-select-branch). Each
-# channel is a tag on the ghcr image (…/armada:stable|beta|testing); selecting
-# one points bootc at that tag, and updates then follow it.
+# Steam UI "OS Update Channel" hook (steamos-select-branch). Steam only accepts
+# Valve's branch tokens (rel/beta/main), so we map them to our ghcr channel tags.
 set -uo pipefail
 
 REGISTRY="ghcr.io/virtudude/armada"
-CHANNELS="stable beta testing"
+
+steam_to_channel() {
+    case "$1" in
+        rel|latest|stable) echo stable ;;
+        beta)              echo beta ;;
+        rc|bc|main|testing) echo testing ;;
+        *) return 1 ;;
+    esac
+}
+
+channel_to_steam() {
+    case "$1" in
+        beta)    echo beta ;;
+        testing) echo main ;;
+        *)       echo rel ;;
+    esac
+}
 
 case "${1:-}" in
     -l)
-        for c in ${CHANNELS}; do echo "${c}"; done
+        printf '%s\n' rel beta main
         ;;
     -c)
-        # Tag = the part after the last ':' of the final path component, after
-        # dropping any @digest. Avoids mis-reading a registry port or digest pin.
-        tag=$(bootc status --format json 2>/dev/null | python3 -c '
+        # rpm-ostree runs unprivileged (Steam invokes us as the session user);
+        # bootc status needs root and would always fall through to the default.
+        tag=$(rpm-ostree status --booted --json 2>/dev/null | python3 -c '
 import sys, json
-ref = json.load(sys.stdin)["spec"]["image"]["image"].split("@", 1)[0]
+ref = json.load(sys.stdin)["deployments"][0]["container-image-reference"].split("@", 1)[0]
 name = ref.rsplit("/", 1)[-1]
 print(name.rsplit(":", 1)[1] if ":" in name else "")' 2>/dev/null || true)
-        case " ${CHANNELS} " in
-            *" ${tag} "*) echo "${tag}" ;;
-            *) echo "stable" ;;
-        esac
-        ;;
-    stable|beta|testing)
-        exec bootc switch "${REGISTRY}:${1}"
+        channel_to_steam "$tag"
         ;;
     *)
-        echo "usage: steamos-select-branch <-c|-l|stable|beta|testing>" >&2
-        exit 1
+        channel=$(steam_to_channel "$1") || { echo "usage: steamos-select-branch <-l|-c|rel|beta|main>" >&2; exit 1; }
+        # --enforce-container-sigpolicy → verified ostree-image-signed origin (cosign-checked).
+        exec bootc switch --enforce-container-sigpolicy "${REGISTRY}:${channel}"
         ;;
 esac
