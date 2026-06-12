@@ -7,14 +7,19 @@ Includes:
 * ARM64 Steam
 * Latest FEX
 * CachyOS Proton 11
+* Desktop mode (KDE)
+* Bazaar App Store
+* Over-the-air updates
 
 > [!WARNING]
 > **Prototype software. Use at your own risk.** Armada is under active
 > development and is not stable. Booting it requires flashing an ABL which
 > could brick your device if done incorrectly.
 >
-> **There is currently no upgrade path.** To use a new build you will need
-> to reflash your SD card, log back into Steam, and redownload your games.
+> **Over-the-air updates are experimental.** Armada can now update itself in
+> place (see [Updating](#updating)) instead of reflashing, but the update path
+> is still being validated. If an update fails, reflashing the SD card is the
+> reliable recovery.
 >
 > **SSH is enabled with a known default password.** To make debugging easier
 > in the prototype phase, the image ships with user `armada` / password `armada`
@@ -26,11 +31,19 @@ Includes:
 
 | Device | SoC | Status |
 |---|---|---|
-| AYANEO Pocket EVO | SM8550 | ✅ Developed and tested on hardware |
-| Odin 2 Portal | SM8550 | ✅ Supported and tested |
-| Odin 2 Mini | SM8550 | ✅ Supported (touchscreen not working) |
-| Odin 2 | SM8550 | ⚪ Supported but untested |
-| Retroid Pocket 6 | SM8550 | ⚪ Supported but untested |
+| AYANEO Pocket EVO | SM8550 | ✅ Supported and tested |
+| AYN Odin 2 Portal | SM8550 | ✅ Supported and tested |
+| AYN Odin 2 Mini | SM8550 | ✅ Supported and tested |
+| AYN Odin 2 | SM8550 | ✅ Supported and tested |
+| AYN Thor | SM8550 | ✅ Supported and tested |
+| AYN Odin 3 | SM8750 | ⚠️ Untested try at own risk |
+| Retroid Pocket 6 | SM8550 | ⚠️ Untested try at own risk |
+| AYANEO Pocket ACE | SM8550 | ⚠️ Untested try at own risk |
+| AYANEO Pocket DMG | SM8550 | ⚠️ Untested try at own risk |
+| AYANEO Pocket DS | SM8550 | ⚠️ Untested try at own risk |
+| AYANEO Pocket S 2K | SM8550 | ⚠️ Untested try at own risk |
+| AYANEO Pocket S2 | SM8650 | ⚠️ Untested try at own risk |
+| KONKR Pocket FIT | SM8650 | ⚠️ Untested try at own risk |
 
 ## Install
 
@@ -58,23 +71,36 @@ development.
 
    After the intro animation, the display may be black for up to 60 seconds
    before Steam appears. This is expected on the current SD-card boot path.
-   Eventually you will see Steam first-run where you can configure your Wi-Fi
-   and login.
+   Eventually you will see Steam first-run where you can configure your 
+   language, timezone, and Wi-Fi. At the end Steam will restart again, and 
+   you may see another 60 seconds of black before the login screen appears.
+
+## Updating
+
+> [!NOTE]
+> Over-the-air updates are new and still being validated. You may need to reflash
+> if an update fails.
+
+Armada has several release channels (`Beta` only in currently) and can update 
+itself in place — no reflash, no re-downloading games. Trigger an update 
+from Steam's update prompt, or run `steamos-update` from a terminal. Updates are
+image-based with rollback, so a failed boot falls back to the previous image.
 
 ## Roadmap
 
-- **Desktop mode:** add support for switching to KDE from Steam
 - **Install to internal storage:** currently boots from SD card
-- **Update mechanism:** image-based updates with rollback
 - **Power / fan control:** integrated with Steam UI where possible
 - **Game compatibility decky plugin:** per game FEX and Proton settings
-- **Broader device support:** e.g. Odin 3
 
 ## Known issues
 
 - **No true suspend.** Pressing power does a "fake suspend" inspired by ROCKNIX,
   not real S3 sleep, so idle battery drain is higher than it should be.
-- **QAM is unmapped on Pocket Evo.** Use Home+A to open the Quick Access Menu.
+- **Black screen during Steam launch.** Sometimes there is a 30-60s black screen 
+  before Steam becomes fully visible, often following an update or restart.
+- **Steam Machine onboarding.** Sometimes you see the Steam Machine onboarding
+  before choosing your language. Tap through it to continue.
+- **QAM is unmapped on Ayaneo devices.** Use Home+A to open the Quick Access Menu.
 
 ## Credits
 
