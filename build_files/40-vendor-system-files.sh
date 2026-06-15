@@ -2,7 +2,6 @@
 set -euxo pipefail
 
 cp -a /ctx/system_files/. /
-install -Dpm 0755 /packages/inputplumber/inputplumber /usr/bin/inputplumber
 install -Dpm 0755 /packages/extest/libextest.so /usr/lib/extest/libextest.so
 
 # shipped so armada-bootimg-update can rebuild /KERNEL on-device after an OTA

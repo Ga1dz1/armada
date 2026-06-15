@@ -20,10 +20,12 @@ dnf5 -y install --setopt=install_weak_deps=False \
 # armada-gamescope carries ROCKNIX's --use-rotation-shader patch.
 dnf5 -y install --setopt=install_weak_deps=False /packages/gamescope/gamescope-[0-9]*.aarch64.rpm
 
+# Patched InputPlumber: dpad signed-axis fix
+dnf5 -y install --setopt=install_weak_deps=False /packages/inputplumber/inputplumber-*.rpm
+
 # Avoid gamescope-session-ogui-steam/-powerstation; Terra's aarch64 deps are broken.
 dnf5 -y install --setopt=install_weak_deps=False --enable-repo=terra \
     gamescope-session \
-    inputplumber \
     steam-notif-daemon
 
 # ROCKNIX's --use-rotation-shader patch makes this a no-arg flag.
