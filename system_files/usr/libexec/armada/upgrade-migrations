@@ -12,9 +12,9 @@ done
 systemctl disable --now plugin_loader.service >/dev/null 2>&1 || true
 rm -f /etc/systemd/user/gamescope-session-plus@.service.d/10-armada-affinity.conf
 
-for unit in armada-upgrade-migrations.service armada-powerd.service armada-steamos-manager.service; do
+for unit in armada-upgrade-migrations.service armada-powerd.service armada-steamos-manager.service armada-decky-sync.service armada-decky-loader.service; do
     systemctl enable "$unit" >/dev/null 2>&1 || true
 done
 systemctl --global enable armada-steamos-manager.service >/dev/null 2>&1 || true
 systemctl daemon-reload >/dev/null 2>&1 || true
-systemctl start --no-block armada-powerd.service armada-steamos-manager.service >/dev/null 2>&1 || true
+systemctl start --no-block armada-powerd.service armada-steamos-manager.service armada-decky-sync.service armada-decky-loader.service >/dev/null 2>&1 || true

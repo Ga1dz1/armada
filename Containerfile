@@ -16,6 +16,7 @@ FROM ${EXTEST_PKG} AS extest
 
 FROM scratch AS ctx
 COPY build_files /build_files/
+COPY decky /decky/
 COPY system_files /system_files/
 
 FROM quay.io/fedora/fedora-bootc:44

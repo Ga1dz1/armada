@@ -27,6 +27,7 @@ if [[ -d "${steam_shim_dir}" ]]; then
 fi
 export LD_LIBRARY_PATH="${steam_ld_path}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 
+touch "${steam_root}/.cef-enable-remote-debugging"
 cd "${steam_arm_dir}"
 exec "${steam_arm}" \
     "${steam_args[@]}" \

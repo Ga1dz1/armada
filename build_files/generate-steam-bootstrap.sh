@@ -162,6 +162,9 @@ rm -f \
     "${DOT_STEAM}/steam.pid" \
     "${DOT_STEAM}/steam.token"
 
+# Steam opens Decky's localhost CEF debugger only when this marker exists.
+touch "${STEAM}/.cef-enable-remote-debugging"
+
 package_count=$(find "${STEAM}/package" -maxdepth 1 -type f | wc -l)
 zipvz_count=$(find "${STEAM}/package" -maxdepth 1 -type f -name '*.zip.vz.*' | wc -l)
 echo "Generated ARM64 Steam bootstrap: ${package_count} package files, ${zipvz_count} compressed payloads, updater rc ${steam_rc}, .installed present"

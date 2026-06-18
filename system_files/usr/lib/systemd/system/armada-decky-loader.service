@@ -1,0 +1,25 @@
+[Unit]
+Description=Decky Loader
+After=network-online.target systemd-binfmt.service armada-decky-sync.service
+Wants=network-online.target armada-decky-sync.service
+
+[Service]
+Type=simple
+User=root
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=15
+WorkingDirectory=/var/home/armada/homebrew/services
+ExecStart=/var/home/armada/homebrew/services/PluginLoader
+Environment=UNPRIVILEGED_PATH=/var/home/armada/homebrew
+Environment=PRIVILEGED_PATH=/var/home/armada/homebrew
+Environment=PLUGIN_PATH=/var/home/armada/homebrew/plugins
+Environment=UNPRIVILEGED_USER=armada
+Environment=KEEP_SYSTEMD_SERVICE=1
+Environment=USE_CEF_CLOSE_WORKAROUND=0
+Environment=LOG_LEVEL=INFO
+Environment=FEX_APP_CONFIG=/usr/share/fex-emu/AppConfig/PluginLoader.json
+
+[Install]
+WantedBy=multi-user.target
