@@ -16,7 +16,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 BUS_NAME = "org.armada.Power"
 OBJECT_PATH = "/org/armada/Power"
 IFACE = "org.armada.Power1"
-PROFILES = ["efficiency", "balanced", "performance"]
+PROFILES = ["eco", "balanced", "performance"]
 STATE_FILE = Path("/var/lib/armada/powerd.state")
 FACTORY_CONFIG_FILE = Path("/usr/share/armada/power-profiles.conf")
 CONFIG_FILE = Path("/etc/armada/power-profiles.conf")
@@ -71,18 +71,17 @@ def write_text(path, value):
 
 
 def restore_factory_config(reason):
+    # Remove invalid /etc overrides so factory-only sections keep tracking /usr.
     if not CONFIG_FILE.exists():
-        raise reason
-    if not FACTORY_CONFIG_FILE.exists():
         raise reason
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     backup = CONFIG_FILE.with_name(f"{CONFIG_FILE.name}.invalid-{timestamp}")
     try:
         shutil.copy2(CONFIG_FILE, backup)
-        shutil.copy2(FACTORY_CONFIG_FILE, CONFIG_FILE)
+        CONFIG_FILE.unlink()
     except OSError:
         raise reason
-    print(f"armada-powerd: replaced invalid {CONFIG_FILE} with factory defaults; backup at {backup}: {reason}", file=sys.stderr)
+    print(f"armada-powerd: dropped invalid {CONFIG_FILE} (backup at {backup}); using factory defaults: {reason}", file=sys.stderr)
 
 
 def sd_notify(message):

@@ -2,7 +2,6 @@
 set -euxo pipefail
 
 cp -a /ctx/system_files/. /
-install -Dpm 0644 /etc/armada/power-profiles.conf /usr/share/armada/power-profiles.conf
 install -Dpm 0755 /packages/extest/libextest.so /usr/lib/extest/libextest.so
 
 # mkbootimg must be present for on-device /KERNEL rebuilds after OTA.

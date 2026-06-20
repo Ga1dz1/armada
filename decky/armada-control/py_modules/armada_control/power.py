@@ -8,7 +8,7 @@ from .system import atomically_write, run_cmd
 
 POWER_CONFIG = Path("/etc/armada/power-profiles.conf")
 FACTORY_POWER_CONFIG = Path("/usr/share/armada/power-profiles.conf")
-PROFILES = ("efficiency", "balanced", "performance")
+PROFILES = ("eco", "balanced", "performance")
 
 
 def default_label(name):
@@ -16,12 +16,13 @@ def default_label(name):
 
 
 def restore_factory_power_config(reason):
-    if not POWER_CONFIG.exists() or not FACTORY_POWER_CONFIG.exists():
+    # Remove invalid /etc overrides so factory-only sections keep tracking /usr.
+    if not POWER_CONFIG.exists():
         raise reason
     backup = POWER_CONFIG.with_name(f"{POWER_CONFIG.name}.invalid-{time.strftime('%Y%m%d-%H%M%S')}")
     try:
         shutil.copy2(POWER_CONFIG, backup)
-        shutil.copy2(FACTORY_POWER_CONFIG, POWER_CONFIG)
+        POWER_CONFIG.unlink()
     except OSError:
         raise reason
 
@@ -83,37 +84,46 @@ def parsed_power(parser):
     return data
 
 
-def render_power(data):
+# Only editable fields are written to /etc; factory-only fields stay in /usr.
+EDITABLE_KEYS = ("cpu_max", "cpu_underclock", "gpu_max", "gpu_min", "fan_curve")
+NUMERIC_KEYS = ("cpu_max", "gpu_max", "gpu_min")
+
+
+def profile_overrides(profile):
+    out = {}
+    for key in EDITABLE_KEYS:
+        value = profile[key]
+        out[key] = f"{float(value):.2f}" if key in NUMERIC_KEYS else str(value)
+    return out
+
+
+def set_or_clear(parser, section, key, value, keep):
+    if keep:
+        if not parser.has_section(section):
+            parser.add_section(section)
+        parser.set(section, key, value)
+    elif parser.has_section(section) and parser.has_option(section, key):
+        parser.remove_option(section, key)
+
+
+def render_power(data, factory):
+    # Preserve hand-edited /etc fields outside the plugin-owned keys.
     parser = configparser.ConfigParser()
     parser.optionxform = str
-    parser["general"] = {"default_profile": data["general"]["default_profile"]}
+    parser.read(POWER_CONFIG)
+
+    set_or_clear(parser, "general", "default_profile", data["general"]["default_profile"],
+                 data["general"]["default_profile"] != factory["general"]["default_profile"])
     for name in PROFILES:
-        profile = data["profiles"][name]
-        parser[f"profile.{name}"] = {
-            "label": str(profile.get("label") or default_label(name)),
-            "cpu_governor": str(profile["cpu_governor"]),
-            "cpu_max": str(profile["cpu_max"]),
-            "cpu_underclock": str(profile["cpu_underclock"]),
-            "gpu_max": str(profile["gpu_max"]),
-            "gpu_min": str(profile["gpu_min"]),
-            "fan_curve": str(profile["fan_curve"]),
-        }
-    for name in sorted(data.get("fan_curves", {})):
-        fan_curve = data["fan_curves"][name]
-        if isinstance(fan_curve, dict):
-            parser[f"fan_curve.{name}"] = {
-                "label": str(fan_curve.get("label") or default_label(name)),
-                "curve": str(fan_curve.get("curve", "")),
-            }
-        else:
-            parser[f"fan_curve.{name}"] = {"curve": str(fan_curve)}
-    parser["fan"] = {str(k): str(v) for k, v in data["fan"].items()}
-    for device_class in sorted(data.get("underclocks", {})):
-        levels = data["underclocks"][device_class]
-        for level in sorted(levels):
-            parser[f"underclock.{device_class}.{level}"] = {
-                str(k): str(v) for k, v in levels[level].items()
-            }
+        overrides = profile_overrides(data["profiles"][name])
+        edited = overrides != profile_overrides(factory["profiles"][name])
+        for key in EDITABLE_KEYS:
+            set_or_clear(parser, f"profile.{name}", key, overrides[key], edited)
+
+    for section in ("general", *(f"profile.{name}" for name in PROFILES)):
+        if parser.has_section(section) and not parser.options(section):
+            parser.remove_section(section)
+
     with tempfile.TemporaryFile("w+", encoding="utf-8") as f:
         parser.write(f)
         f.seek(0)
@@ -128,11 +138,14 @@ def factory_power_defaults():
 
 
 def save_power_config(data):
-    if not isinstance(data, dict) or data.get("general", {}).get("default_profile") not in PROFILES:
+    if not isinstance(data, dict) or not isinstance(data.get("general"), dict):
+        raise ValueError("invalid power config")
+    data["general"]["default_profile"] = data["general"].get("default_profile", "")
+    if data["general"]["default_profile"] not in PROFILES:
         raise ValueError("invalid power config")
     try:
-        rendered = render_power(data)
-    except (KeyError, TypeError) as exc:
+        rendered = render_power(data, factory_power_defaults())
+    except (KeyError, TypeError, ValueError) as exc:
         raise ValueError(f"malformed power config: {exc}")
     atomically_write(POWER_CONFIG, rendered)
     run_cmd(["/usr/bin/armada-power", "reload"], timeout=15, capture=False)
