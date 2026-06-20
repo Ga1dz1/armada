@@ -16,7 +16,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 BUS_NAME = "org.armada.Power"
 OBJECT_PATH = "/org/armada/Power"
 IFACE = "org.armada.Power1"
-PROFILES = ["quiet", "balanced", "performance"]
+PROFILES = ["efficiency", "balanced", "performance"]
 STATE_FILE = Path("/var/lib/armada/powerd.state")
 FACTORY_CONFIG_FILE = Path("/usr/share/armada/power-profiles.conf")
 CONFIG_FILE = Path("/etc/armada/power-profiles.conf")
@@ -173,6 +173,7 @@ class ArmadaPower:
     def __init__(self):
         self.env = shell_env()
         self.profile_config = {}
+        self.profile_labels = {}
         self.underclock_config = {}
         self.fan_curves = {}
         self.fan_config = {}
@@ -276,6 +277,7 @@ class ArmadaPower:
             fan_curve = parser.get(section, "fan_curve").strip().lower()
             curve = parse_fan_curve(fan_curve)
             config = {
+                "label": parser.get(section, "label", fallback="").strip() or profile.replace("_", " ").title(),
                 "cpu_governor": parser.get(section, "cpu_governor").strip(),
                 "cpu_max": require_ratio(parser, section, "cpu_max"),
                 "cpu_underclock": parser.get(section, "cpu_underclock").strip().lower(),
@@ -318,6 +320,7 @@ class ArmadaPower:
             restore_factory_config(exc)
             parsed = self.parse_config(include_user=False)
         self.default_profile, self.underclock_config, self.fan_curves, self.profile_config, self.fan_config = parsed
+        self.profile_labels = {p: self.profile_config[p].get("label", p) for p in PROFILES}
 
     def discover_gpu(self):
         for path in Path("/sys/class/devfreq").glob("*.gpu"):
@@ -601,14 +604,24 @@ class ArmadaPower:
         value = read_text(self.fan_rpm) if self.fan_rpm else ""
         return int(value) if value.isdigit() else 0
 
+    def label_for(self, profile):
+        return self.profile_labels.get(profile, profile)
+
+    def profile_for_label(self, label):
+        target = label.strip()
+        for pid, lbl in self.profile_labels.items():
+            if lbl == target:
+                return pid
+        return normalize_profile(target)
+
     def get_property(self, prop):
         freqs = self.gpu_freqs()
         if prop == "AvailableProfiles":
-            return GLib.Variant("as", PROFILES)
+            return GLib.Variant("as", [self.label_for(p) for p in PROFILES])
         if prop == "Profile":
-            return GLib.Variant("s", self.profile)
+            return GLib.Variant("s", self.label_for(self.profile))
         if prop == "SuggestedDefaultProfile":
-            return GLib.Variant("s", self.default_profile)
+            return GLib.Variant("s", self.label_for(self.default_profile))
         if prop == "AvailableGpuPerformanceLevels":
             return GLib.Variant("as", ["auto", "manual"] if self.gpu else [])
         if prop == "GpuPerformanceLevel":
@@ -633,12 +646,12 @@ class ArmadaPower:
     def set_property(self, prop, value):
         changed = {}
         if prop == "Profile":
-            profile = normalize_profile(value.get_string())
+            profile = self.profile_for_label(value.get_string())
             if profile not in PROFILES:
                 raise ValueError(value.get_string())
             self.profile = profile
             self.apply_profile()
-            changed["Profile"] = GLib.Variant("s", self.profile)
+            changed["Profile"] = GLib.Variant("s", self.label_for(self.profile))
         elif prop == "GpuPerformanceLevel":
             level = value.get_string()
             if level not in ("auto", "manual"):
