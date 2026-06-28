@@ -1,0 +1,13 @@
+[Unit]
+Description=Apply Armada Steam compatibility patches
+After=network.target
+
+[Service]
+Type=simple
+User=armada
+ExecStart=/usr/libexec/armada/steam-patches
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

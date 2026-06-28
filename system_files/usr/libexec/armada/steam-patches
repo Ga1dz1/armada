@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+import json
+import logging
+import time
+import urllib.error
+import urllib.request
+
+import websocket
+
+CEF_JSON_URL = "http://127.0.0.1:8080/json/list"
+LOG = logging.getLogger("armada-steam-patches")
+
+
+DISPLAY_MANAGER_DEFAULT_RESOLUTION_PATCH = r"""
+(async () => {
+  const patchId = "armada-display-manager-default-resolution";
+  if (!window.webpackChunksteamui) {
+    return { applied: false, retry: true, reason: "steamui-webpack-unavailable" };
+  }
+
+  let req;
+  window.webpackChunksteamui.push([["armada_cef_patch_" + Date.now()], {}, (r) => { req = r; }]);
+  if (typeof req !== "function") {
+    return { applied: false, retry: true, reason: "steamui-require-unavailable" };
+  }
+
+  const mod = req(96555);
+  const Store = mod?.fQ;
+  if (!Store?.prototype?.GetState || !Store.Get) {
+    return { applied: false, retry: true, reason: "display-manager-store-unavailable" };
+  }
+
+  const store = Store.Get();
+  const state = await store.GetState();
+  if (!state) {
+    return { applied: false, retry: true, reason: "display-manager-state-unavailable" };
+  }
+  if (state.game_resolution_override_default) {
+    return { applied: false, reason: "default-resolution-present" };
+  }
+
+  if (!state.game_resolution_override_native) {
+    const display = state.displays?.find((d) => d.is_primary) || state.displays?.find((d) => d.is_enabled);
+    const mode = display?.modes?.find((m) => m.id === display.current_mode_id) || display?.modes?.[0];
+    if (!mode?.width || !mode?.height) {
+      return { applied: false, retry: true, reason: "no-resolution-fallback" };
+    }
+  }
+
+  if (!window.__armadaCefPatches) window.__armadaCefPatches = {};
+  if (!window.__armadaCefPatches[patchId]) {
+    const original = Store.prototype.GetState;
+    Store.prototype.GetState = async function(...args) {
+      const next = await original.apply(this, args);
+      if (next && !next.game_resolution_override_default) {
+        next.game_resolution_override_default = next.game_resolution_override_native || (() => {
+          const display = next.displays?.find((d) => d.is_primary) || next.displays?.find((d) => d.is_enabled);
+          const mode = display?.modes?.find((m) => m.id === display.current_mode_id) || display?.modes?.[0];
+          return mode?.width && mode?.height ? { width: mode.width, height: mode.height } : undefined;
+        })();
+      }
+      return next;
+    };
+    window.__armadaCefPatches[patchId] = { installedAt: Date.now(), original };
+  }
+
+  store.OnStateChanged?.();
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const patched = await store.GetState();
+  const applied = Boolean(patched?.game_resolution_override_default);
+  return {
+    applied,
+    retry: !applied,
+    reason: "patched",
+    defaultResolution: patched?.game_resolution_override_default,
+  };
+})()
+"""
+
+
+PATCHES = [
+    ("display-manager-default-resolution", DISPLAY_MANAGER_DEFAULT_RESOLUTION_PATCH),
+]
+
+
+def shared_context():
+    with urllib.request.urlopen(CEF_JSON_URL, timeout=2) as response:
+        pages = json.load(response)
+    for page in pages:
+        if page.get("title") == "SharedJSContext":
+            url = page.get("webSocketDebuggerUrl")
+            if url:
+                return page.get("id") or url, url
+    raise RuntimeError("Steam SharedJSContext is unavailable")
+
+
+def eval_shared(url, expression):
+    sock = websocket.create_connection(url, timeout=3)
+    try:
+        sock.send(json.dumps({
+            "id": 1,
+            "method": "Runtime.evaluate",
+            "params": {
+                "expression": expression,
+                "returnByValue": True,
+                "awaitPromise": True,
+            },
+        }, separators=(",", ":")))
+        while True:
+            message = json.loads(sock.recv())
+            if message.get("id") != 1:
+                continue
+            payload = message.get("result", {})
+            if "exceptionDetails" in payload:
+                text = payload["exceptionDetails"].get("text", "Steam CEF evaluation failed")
+                raise RuntimeError(text)
+            result = payload.get("result", {})
+            if result.get("subtype") == "error":
+                raise RuntimeError(result.get("description", "Steam CEF evaluation failed"))
+            return result.get("value")
+    finally:
+        sock.close()
+
+
+def apply_patches(url):
+    results = {}
+    for name, expression in PATCHES:
+        results[name] = eval_shared(url, expression)
+    return results
+
+
+def patch_results_complete(results):
+    for result in results.values():
+        if not isinstance(result, dict):
+            return False
+        if result.get("retry"):
+            return False
+    return True
+
+
+def main():
+    logging.basicConfig(level=logging.INFO, format="%(name)s: %(levelname)s: %(message)s")
+    last_context = None
+
+    while True:
+        try:
+            context_id, url = shared_context()
+            if context_id != last_context:
+                results = apply_patches(url)
+                LOG.info("patched SharedJSContext %s: %s", context_id, results)
+                if patch_results_complete(results):
+                    last_context = context_id
+            time.sleep(5)
+        except (RuntimeError, urllib.error.URLError, TimeoutError, websocket.WebSocketException, OSError) as error:
+            if last_context is not None:
+                LOG.info("Steam CEF unavailable: %s", error)
+            last_context = None
+            time.sleep(2)
+
+
+if __name__ == "__main__":
+    main()
