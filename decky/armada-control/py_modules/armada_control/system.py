@@ -2,6 +2,10 @@ import os
 import shlex
 import subprocess
 import tempfile
+from pathlib import Path
+
+
+OS_VERSION_PATH = Path("/usr/lib/armada/version")
 
 
 def atomically_write(path, text, mode=None):
@@ -58,6 +62,10 @@ def ssh_enabled():
     active = run_cmd(["systemctl", "is-active", "sshd"])
     active_s = active.stdout.strip() if active else ""
     return active_s == "active"
+
+
+def os_version():
+    return read_text(OS_VERSION_PATH) or "unknown"
 
 
 def read_text(path):

@@ -29,6 +29,8 @@ COPY decky /decky/
 COPY system_files /system_files/
 
 FROM quay.io/fedora/fedora-bootc:44
+ARG ARMADA_VERSION=unknown
+LABEL org.opencontainers.image.version="${ARMADA_VERSION}"
 
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=bind,from=fex,source=/rpms,target=/packages/fex \
@@ -43,6 +45,8 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \
     --mount=type=tmpfs,dst=/tmp \
+    mkdir -p /usr/lib/armada && \
+    printf '%s\n' "${ARMADA_VERSION}" >/usr/lib/armada/version && \
     /ctx/build_files/build.sh
 
 RUN bootc container lint

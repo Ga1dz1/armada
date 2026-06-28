@@ -70,9 +70,8 @@ build $target_image=image_name $tag=default_tag:
     set -euo pipefail
 
     BUILD_ARGS=()
-    if [[ -z "$(git status -s)" ]]; then
-        BUILD_ARGS+=("--build-arg" "SHA_HEAD_SHORT=$(git rev-parse --short HEAD)")
-    fi
+    ARMADA_VERSION="$(TZ=America/New_York date +%Y%m%d).$(git rev-parse --short HEAD)"
+    BUILD_ARGS+=("--build-arg" "ARMADA_VERSION=${ARMADA_VERSION}")
 
     SECRET_ARGS=()
     if [[ -n "${GITHUB_TOKEN:-}" ]]; then

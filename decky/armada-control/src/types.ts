@@ -77,6 +77,7 @@ export interface Config {
   installedGames: InstalledGame[];
   fexProfiles: Record<string, FexProfile>;
   cpuDeviceClass: string;
+  osVersion: string;
   sshEnabled: boolean;
   controllerType: string;
   controllerTypes: DropdownChoice[];

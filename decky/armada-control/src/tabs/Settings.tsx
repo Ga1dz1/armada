@@ -1,4 +1,4 @@
-import { ButtonItem, PanelSection } from "@decky/ui";
+import { ButtonItem, Field, PanelSection } from "@decky/ui";
 import type { Dispatch, SetStateAction } from "react";
 import { setControllerType as applyControllerType, setSshEnabled as applySshEnabled } from "../backend";
 import { openCalibration } from "../components/Calibration";
@@ -44,6 +44,7 @@ export function Settings({ config, setConfig }: {
       </PanelSection>
       <PanelSection title="System">
         <ToggleRow label="Enable SSH" value={!!config.sshEnabled} onChange={setSshEnabled} />
+        <Field label="OS Version" description={config.osVersion || "unknown"} />
       </PanelSection>
     </>
   );
