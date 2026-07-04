@@ -311,6 +311,7 @@ class ArmadaPower:
             for key in ("min_pwm", "max_pwm", "ramp_up", "ramp_down")
         }
         fan_config["smoothing"] = clamp(parser.getfloat("fan", "smoothing"), 0.0, 0.99)
+        fan_config["pwm_quantum"] = clamp(parser.getint("fan", "pwm_quantum", fallback=1), 1, 255)
         fan_config["min_pwm"] = clamp(fan_config["min_pwm"], 0, 255)
         fan_config["max_pwm"] = clamp(fan_config["max_pwm"], fan_config["min_pwm"], 255)
 
@@ -593,9 +594,10 @@ class ArmadaPower:
         return values
 
     def read_temp(self):
-        values = self.read_temps()
+        values = sorted(self.read_temps(), reverse=True)
         if not values:
             return 0
+        values = values[:3]
         return sum(values) // len(values)
 
     def read_temp_max(self):
@@ -619,13 +621,32 @@ class ArmadaPower:
             return config["fan_low_pwm"]
         return 0
 
+    def quantize_pwm(self, pwm):
+        quantum = self.fan_config["pwm_quantum"]
+        if quantum > 1:
+            pwm = round(pwm / quantum) * quantum
+        return clamp(int(pwm), self.fan_config["min_pwm"], self.fan_config["max_pwm"])
+
     def target_pwm(self, temp):
         curve = self.profile_settings()["fan_curve"]
         if isinstance(curve, str):
             curve = self.fan_curves[curve]
-        for threshold, pwm in curve:
-            if temp >= threshold:
-                return clamp(pwm, self.fan_config["min_pwm"], self.fan_config["max_pwm"])
+        curve = sorted(curve)
+        if not curve:
+            return self.fan_config["min_pwm"]
+        if temp <= curve[0][0]:
+            return self.quantize_pwm(curve[0][1])
+        if temp >= curve[-1][0]:
+            return self.quantize_pwm(curve[-1][1])
+        for lower, upper in zip(curve, curve[1:]):
+            low_temp, low_pwm = lower
+            high_temp, high_pwm = upper
+            if low_temp <= temp <= high_temp:
+                span = high_temp - low_temp
+                if not span:
+                    return self.quantize_pwm(high_pwm)
+                pwm = low_pwm + (high_pwm - low_pwm) * (temp - low_temp) / span
+                return self.quantize_pwm(pwm)
         return self.fan_config["min_pwm"]
 
     def fan_tick(self):
