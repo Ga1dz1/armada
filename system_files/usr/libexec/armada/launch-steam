@@ -34,10 +34,6 @@ proton11_runner="${steam_root}/steamapps/common/Proton 11.0 (ARM64)"
 proton11_reg="${steam_root}/compatibilitytools.d/proton-11-arm64"
 proton11_flags="$(grep -oP '"StateFlags"\s+"\K[0-9]+' "${steam_root}/steamapps/appmanifest_4628740.acf" 2>/dev/null || true)"
 if [[ -n "${proton11_flags}" ]] && (( proton11_flags & 4 )); then
-    # steamrt4 (4185400) isn't installed; re-strip because Steam restores it on update.
-    if grep -q require_tool_appid "${proton11_runner}/toolmanifest.vdf" 2>/dev/null; then
-        sed -i '/require_tool_appid/d' "${proton11_runner}/toolmanifest.vdf"
-    fi
     mkdir -p "${proton11_reg}"
     cat > "${proton11_reg}/compatibilitytool.vdf" <<EOF
 "compatibilitytools"
@@ -57,6 +53,16 @@ EOF
 else
     rm -rf "${proton11_reg}"
 fi
+
+# The ARM client can't resolve require_tool_appid for the SLR4 Arm64 runtime (4185400)
+# even when it's installed, so Protons requiring it fail "compat tool failed". Strip it
+# from every Proton and run bare.
+for manifest in \
+    "${steam_root}"/compatibilitytools.d/*/toolmanifest.vdf \
+    "${steam_root}"/steamapps/common/Proton*/toolmanifest.vdf; do
+    [[ -f "${manifest}" ]] || continue
+    sed -i '/require_tool_appid.*4185400/d' "${manifest}"
+done
 
 touch "${steam_root}/.cef-enable-remote-debugging"
 /usr/libexec/armada/powerbuttond >/dev/null 2>&1 &
