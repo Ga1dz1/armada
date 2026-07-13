@@ -29,3 +29,8 @@ case "${ARMADA_GAMEPAD_QUIRK:-none}" in
     none)
         ;;
 esac
+
+# fake-suspend keeps wifi associated; real suspend needs NM to drop and reconnect.
+if [[ "${ARMADA_SUSPEND_MODE:-fake}" != "fake" ]]; then
+    rm -f /etc/NetworkManager/ignore-sleep
+fi
