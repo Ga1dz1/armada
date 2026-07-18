@@ -29,6 +29,34 @@ Includes:
 > from Armada Control, anyone on your network can log in until you change the
 > password.
 
+## About this fork
+
+This fork adds **Retroid Pocket Mini V2 (SM8250)** support on top of upstream
+[virtudude/armada](https://github.com/virtudude/armada): kernel/device-tree
+support for the SM8250 SoC, a device profile (panel, gamepad, audio), and a
+few fixes that ended up being generally useful beyond just this one device:
+
+- **A working GRUB boot menu for SM8250.** ABL has no per-device menu for this
+  SoC (unlike SM8550/8650/8750), so without it the wrong device tree boots and
+  no device profile applies at all. The menu is built dynamically from
+  whatever `sm8250-retroidpocket-*` device trees exist, so any future device
+  in that family gets a boot entry automatically.
+- **A correct fix for Steam's oversized UI scale** on small high-DPI panels -
+  the previous approach patched a part of Steam's config that gets recomputed
+  from scratch on every launch, so it never survived a restart.
+- **An InputPlumber patch** so `passthrough: true` actually works for gamepad
+  source devices (upstream only wired it up for keyboards), fixing both a
+  ghost/duplicate controller in Steam and enabling a second, non-exclusive
+  reader of the raw device.
+- **RGB stick lighting** (see [Stick RGB lighting](#stick-rgb-lighting)) - nine
+  modes including a screen-color-reactive "Ambilight" mode, all configurable
+  from Armada Control.
+
+The kernel/DTS side lives in
+[Ga1dz1/armada-packages](https://github.com/Ga1dz1/armada-packages), also a
+fork of virtudude's own
+[armada-packages](https://github.com/virtudude/armada-packages).
+
 ## Supported devices
 
 | Device | SoC | Status |
@@ -46,7 +74,7 @@ Includes:
 | AYANEO Pocket DS | SM8550 | ✅ Tested |
 | AYANEO Pocket DMG | SM8550 | ✅ Tested |
 | AYANEO Pocket S 2K | SM8550 | ⚪ Untested |
-| Retroid Pocket Mini V2 | SM8250 | ⚪ Untested |
+| Retroid Pocket Mini V2 | SM8250 | ✅ Tested |
 
 ## Flash to SD card
 
@@ -165,8 +193,10 @@ tabs:
   (**Default**, **Fast**, **Compatible**, or **Custom**). The defaults work for
   most titles; change these only if a game misbehaves. Settings are saved per game.
 - **Settings.** Choose the controller emulation type (**Xbox 360**, **Steam
-  Deck**, or **DualSense**), launch stick and trigger **calibration**, and adjust
-  system options.
+  Deck**, or **DualSense**), launch stick and trigger **calibration**, adjust
+  system options, and (on devices with RGB analog sticks, currently Retroid
+  Pocket Mini V2) configure **Stick Lighting** - see
+  [Stick RGB lighting](#stick-rgb-lighting).
 
 ### Desktop mode
 
@@ -181,6 +211,29 @@ Pressing the power button does a "fake suspend" (inspired by ROCKNIX) rather tha
 real S3 sleep: it blanks the screen and freezes the session, and the same press
 wakes it. Because the device does not truly sleep, idle battery drain is higher
 than it would be with real suspend.
+
+### Stick RGB lighting
+
+On devices whose analog sticks have addressable RGB (currently Retroid Pocket
+Mini V2), **Armada Control > Settings > Stick Lighting** controls them:
+
+| Mode | Behavior |
+|---|---|
+| Static | A fixed color. |
+| Breathing | The saved color, pulsing. |
+| Battery | Color follows battery level (red → yellow → green), solid green while charging. |
+| Battery + Breathing | Battery color, pulsing. |
+| Rainbow | Hue cycles continuously. |
+| Chase | A lit zone with a fading tail travels around each stick's 4 zones. |
+| Alternating | Breathing, but the left and right sticks are 180° out of phase. |
+| Reactive | Each stick's own deflection drives its brightness and hue (centered = off); each button press flashes both sticks in that button's own color. |
+| Multidot | Three colored dots (red/green/blue) chase each other around each stick's zones. |
+| Ambilight | Each stick tracks the average color of the screen near its own side. |
+
+Most modes have per-mode **Speed**, **Intensity**, and/or **Size** sliders, and
+Reactive lets you set a different flash color per button. A **Follow screen
+brightness** toggle scales all of the above by the display's current backlight
+level.
 
 ## Updating
 
@@ -208,6 +261,8 @@ settings:
 - **Red tint.** Some devices show a red tint on the panel after Steam
   restart. It is intermittent and a reboot clears it.
 - **QAM is unmapped on Ayaneo devices.** Use Home+A to open the Quick Access Menu.
+- **No audio after resume on some devices.** Sometimes audio is silent after
+  waking from sleep until the device is restarted. Still unresolved.
 
 ## Community
 
