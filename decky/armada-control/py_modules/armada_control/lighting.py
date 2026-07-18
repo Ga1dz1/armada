@@ -4,7 +4,7 @@ import subprocess
 from .privileged import call
 
 STICK_LED_SCRIPT = "/usr/libexec/armada/stick-led-color"
-STICK_LED_MODES = {"static", "breathing", "battery", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot"}
+STICK_LED_MODES = {"static", "breathing", "battery", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot", "ambilight"}
 STICK_LED_PARAMS = ("speed", "intensity", "size")
 DEFAULT_COLOR = "0050FF"
 DEFAULT_MODE = "static"

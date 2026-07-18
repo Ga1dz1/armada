@@ -118,7 +118,7 @@ def action_set_stick_led_color(request):
 
 def action_set_stick_led_mode(request):
     mode = str(request.get("mode", ""))
-    if mode not in ("static", "breathing", "battery", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot"):
+    if mode not in ("static", "breathing", "battery", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot", "ambilight"):
         raise ValueError("invalid stick led mode")
     run(["/usr/libexec/armada/stick-led-color", "set-mode", mode], timeout=5)
     return _stick_led_state()
@@ -131,7 +131,7 @@ def action_set_stick_led_screen_link(request):
 
 
 STICK_LED_PARAM_MODES = {
-    "speed": {"breathing", "chase", "rainbow", "alternating", "multidot"},
+    "speed": {"breathing", "chase", "rainbow", "alternating", "multidot", "ambilight"},
     "intensity": {"breathing", "alternating", "chase", "multidot", "reactive"},
     "size": {"chase", "multidot"},
 }

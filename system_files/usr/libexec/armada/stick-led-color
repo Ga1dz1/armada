@@ -19,11 +19,17 @@ Modes:
                        press triggers a brief flash-to-white on both sticks.
   multidot          - three fixed-hue dots (red/green/blue) chase each other
                        around the 4 zones of each stick.
+  ambilight         - saved color ignored; each stick tracks the average
+                       color of a strip near its own side of the screen
+                       (sampled off the DRM framebuffer via ffmpeg's
+                       kmsgrab), fading smoothly between samples rather
+                       than snapping.
 
 Per-mode tunables (set-param <param> <mode> <value>), persisted per mode
 (battery-breathing shares breathing's):
   speed     - animation rate multiplier (0.25-3.0). breathing, chase,
-              rainbow, alternating, multidot.
+              rainbow, alternating, multidot, ambilight (how fast the color
+              chases each new screen sample; the sample rate itself is fixed).
   intensity - how dim the "low point" gets (0.0-0.5): the breathing/
               alternating trough, and the base brightness of chase/multidot's
               unlit zones and reactive's centered-stick color. Higher = less
@@ -45,6 +51,7 @@ import os
 import re
 import select
 import struct
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -59,8 +66,8 @@ SUSPEND_POLL_INTERVAL = 0.5
 DEFAULT_COLOR = "0050FF"
 DEFAULT_MODE = "static"
 DEFAULT_SCREEN_LINK = False
-MODES = ("static", "breathing", "battery", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot")
-ANIMATED_MODES = ("breathing", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot")
+MODES = ("static", "breathing", "battery", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot", "ambilight")
+ANIMATED_MODES = ("breathing", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot", "ambilight")
 LED_BASE = Path("/sys/class/leds")
 POWER_SUPPLY_BASE = Path("/sys/class/power_supply")
 BACKLIGHT_BASE = Path("/sys/class/backlight")
@@ -75,7 +82,7 @@ MULTIDOT_ZONES_PER_SEC = 1.2  # at speed=1.0
 MULTIDOT_COLORS = ((255, 0, 0), (0, 255, 0), (0, 100, 255))
 
 PARAM_SPECS = {
-    "speed": {"min": 0.25, "max": 3.0, "default": 1.0, "modes": ("breathing", "chase", "rainbow", "alternating", "multidot")},
+    "speed": {"min": 0.25, "max": 3.0, "default": 1.0, "modes": ("breathing", "chase", "rainbow", "alternating", "multidot", "ambilight")},
     "intensity": {"min": 0.0, "max": 0.5, "default": 0.15, "modes": ("breathing", "alternating", "chase", "multidot", "reactive")},
     "size": {"min": 1, "max": 3, "default": 2, "modes": ("chase", "multidot")},
 }
@@ -214,6 +221,141 @@ def stick_reactive_rgb(x, y, floor):
     hue = (math.atan2(y, x) % (2 * math.pi)) / (2 * math.pi)
     level = floor + (1 - floor) * magnitude
     return tuple(c * 255 * level for c in colorsys.hsv_to_rgb(hue, 1.0, 1.0))
+
+
+# --- ambilight mode: DRM framebuffer color sampling ------------------------
+# Each stick sits below and to its own side of the panel, not behind the
+# whole screen, so this samples a strip near each screen edge instead of
+# averaging everything: skip a small margin in from the edge (in case of a
+# letterboxed/bezel-masked black border), take a band of pixels beyond that,
+# and only look at the lower part of the screen's height (top ~40% is too far
+# from either stick to feel connected to it; the very bottom ~5% is often a
+# HUD/taskbar strip that isn't representative of "what's on screen"). These
+# are screen-position constants, not per-device ones, because only one
+# device is supported so far - if a second one needs different numbers this
+# should move into device-env instead of growing per-device branches here.
+DRM_CARD = "/dev/dri/card0"
+AMBILIGHT_CAPTURE_FPS = 2  # fixed ffmpeg output rate - see AmbilightSampler docstring
+AMBILIGHT_SMOOTHING = 0.35  # fraction of the way to the new sample each time, at speed=1.0
+AMBILIGHT_GRID = 4  # downscale each side's sampled strip to this many pixels per side
+AMBILIGHT_EDGE_MARGIN_PX = 10  # skip this many pixels in from the left/right screen edge
+AMBILIGHT_EDGE_WIDTH_PX = 100  # sample this many pixels beyond the margin
+AMBILIGHT_TOP_EXCLUDE = 0.40  # fraction of screen height excluded from the top
+AMBILIGHT_BOTTOM_EXCLUDE = 0.05  # fraction of screen height excluded from the bottom
+AMBILIGHT_DEFAULT = (0, 80, 255)
+AMBILIGHT_FRAME_SIZE = 2 * AMBILIGHT_GRID * AMBILIGHT_GRID * 4  # bgr0 bytes per output frame
+
+
+def _ambilight_filter():
+    m, w = AMBILIGHT_EDGE_MARGIN_PX, AMBILIGHT_EDGE_WIDTH_PX
+    y = f"ih*{AMBILIGHT_TOP_EXCLUDE}"
+    h = f"ih*{1.0 - AMBILIGHT_TOP_EXCLUDE - AMBILIGHT_BOTTOM_EXCLUDE}"
+    g = AMBILIGHT_GRID
+    return (
+        f"hwdownload,format=bgr0,split=2[a][b];"
+        f"[a]crop=w={w}:h={h}:x={m}:y={y},scale={g}:{g}[left];"
+        f"[b]crop=w={w}:h={h}:x=iw-{m}-{w}:y={y},scale={g}:{g}[right];"
+        f"[left][right]hstack=inputs=2[out]"
+    )
+
+
+def _average_region(data, width, x0, x1, y0, y1):
+    tr = tg = tb = 0.0
+    n = 0
+    for y in range(y0, y1):
+        row = y * width
+        for x in range(x0, x1):
+            off = (row + x) * 4
+            tb += data[off]
+            tg += data[off + 1]
+            tr += data[off + 2]
+            n += 1
+    return (tr / n, tg / n, tb / n) if n else None
+
+
+class AmbilightSampler:
+    """Keeps a single ffmpeg kmsgrab process alive in the background rather
+    than spawning a fresh one per sample - process startup (dynamic linking,
+    opening the DRM card, allocating capture buffers) is the dominant cost
+    here, not the capture itself, so this amortizes that cost across the
+    whole time ambilight mode stays selected instead of paying it on every
+    single sample. ffmpeg runs at a fixed, modest output rate regardless of
+    the "speed" param; speed instead controls how aggressively the LED color
+    chases each incoming sample (see sample()), which is the more
+    perceptually relevant knob for a slow ambient effect like this anyway."""
+
+    def __init__(self):
+        self.color_l = AMBILIGHT_DEFAULT
+        self.color_r = AMBILIGHT_DEFAULT
+        self.proc = None
+        self.buf = b""
+
+    def ensure_open(self):
+        if self.proc is not None and self.proc.poll() is None:
+            return True
+        self.close()
+        try:
+            self.proc = subprocess.Popen(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error",
+                    "-f", "kmsgrab", "-i", DRM_CARD,
+                    "-r", str(AMBILIGHT_CAPTURE_FPS),
+                    "-filter_complex", _ambilight_filter(),
+                    "-map", "[out]",
+                    "-f", "rawvideo", "-pix_fmt", "bgr0", "-",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+            )
+        except OSError:
+            self.proc = None
+            return False
+        os.set_blocking(self.proc.stdout.fileno(), False)
+        self.buf = b""
+        return True
+
+    def close(self):
+        if self.proc is not None:
+            try:
+                self.proc.kill()
+                self.proc.wait(timeout=1)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            self.proc = None
+        self.buf = b""
+
+    def sample(self, speed):
+        if not self.ensure_open():
+            return self.color_l, self.color_r
+        try:
+            while True:
+                chunk = os.read(self.proc.stdout.fileno(), 65536)
+                if not chunk:
+                    self.close()
+                    return self.color_l, self.color_r
+                self.buf += chunk
+        except BlockingIOError:
+            pass
+        except OSError:
+            self.close()
+            return self.color_l, self.color_r
+        n_frames = len(self.buf) // AMBILIGHT_FRAME_SIZE
+        if n_frames == 0:
+            return self.color_l, self.color_r
+        # Only the newest complete frame matters - if the daemon fell behind,
+        # older buffered frames are already stale.
+        frame = self.buf[(n_frames - 1) * AMBILIGHT_FRAME_SIZE : n_frames * AMBILIGHT_FRAME_SIZE]
+        self.buf = self.buf[n_frames * AMBILIGHT_FRAME_SIZE :]
+        g = AMBILIGHT_GRID
+        left = _average_region(frame, 2 * g, 0, g, 0, g)
+        right = _average_region(frame, 2 * g, g, 2 * g, 0, g)
+        if left is None or right is None:
+            return self.color_l, self.color_r
+        smoothing = min(0.9, AMBILIGHT_SMOOTHING * speed)
+        self.color_l = tuple(c * (1 - smoothing) + t * smoothing for c, t in zip(self.color_l, left))
+        self.color_r = tuple(c * (1 - smoothing) + t * smoothing for c, t in zip(self.color_r, right))
+        return self.color_l, self.color_r
 
 
 def load_state():
@@ -387,9 +529,11 @@ def run_daemon():
     chase_pos = 0.0
     multidot_pos = 0.0
     reactive = ReactiveInput()
+    ambilight = AmbilightSampler()
     while True:
         if SUSPEND_FLAG.exists():
             reactive.close()
+            ambilight.close()
             apply_rgb(0, 0, 0)
             phase = chase_pos = multidot_pos = 0.0
             time.sleep(SUSPEND_POLL_INTERVAL)
@@ -398,6 +542,8 @@ def run_daemon():
         scale = screen_scale() if screen_link else 1.0
         if mode != "reactive":
             reactive.close()
+        if mode != "ambilight":
+            ambilight.close()
         if mode in ANIMATED_MODES:
             if mode == "rainbow":
                 r, g, b = rainbow_rgb(phase)
@@ -432,6 +578,10 @@ def run_daemon():
                 apply_side_rgb("l", blend(lr) * scale, blend(lg) * scale, blend(lb) * scale)
                 apply_side_rgb("r", blend(rr) * scale, blend(rg) * scale, blend(rb) * scale)
                 reactive.tick_decay()
+            elif mode == "ambilight":
+                (lr, lg, lb), (rr, rg, rb) = ambilight.sample(get_param(settings, "speed", mode))
+                apply_side_rgb("l", lr * scale, lg * scale, lb * scale)
+                apply_side_rgb("r", rr * scale, rg * scale, rb * scale)
             else:
                 r, g, b = base_rgb(mode, color)
                 floor = get_param(settings, "intensity", mode)

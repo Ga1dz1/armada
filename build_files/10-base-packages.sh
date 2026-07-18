@@ -5,6 +5,8 @@ dnf5 -y install --nogpgcheck \
     --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' \
     terra-release
 
+# ffmpeg-free's kmsgrab demuxer is what armada-stick-led's "ambilight" mode
+# uses to sample the screen's average color straight off the DRM framebuffer.
 dnf5 -y install --setopt=install_weak_deps=False \
     sddm \
     pipewire \
@@ -34,6 +36,7 @@ dnf5 -y install --setopt=install_weak_deps=False \
     lsof \
     unzip \
     evtest \
+    ffmpeg-free \
     dbus-x11 \
     xdg-user-dirs \
     xdg-terminal-exec \

@@ -41,6 +41,7 @@ const MODE_OPTIONS: { data: string; label: string }[] = [
   { data: "alternating", label: "Alternating (L/R)" },
   { data: "reactive", label: "Reactive (sticks + buttons)" },
   { data: "multidot", label: "Multidot (RGB chase)" },
+  { data: "ambilight", label: "Ambilight (matches screen)" },
 ];
 const COLOR_VISIBLE_MODES = new Set(["static", "breathing", "chase", "alternating"]);
 
@@ -54,7 +55,7 @@ const PARAM_UI: Record<string, { label: string; min: number; max: number; step: 
     min: 25,
     max: 300,
     step: 25,
-    modes: new Set(["breathing", "chase", "rainbow", "alternating", "multidot"]),
+    modes: new Set(["breathing", "chase", "rainbow", "alternating", "multidot", "ambilight"]),
     toBackend: (v) => v / 100,
     fromBackend: (v) => Math.round(v * 100),
   },

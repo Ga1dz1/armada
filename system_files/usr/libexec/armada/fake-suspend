@@ -51,6 +51,20 @@ display_on() {
 mute_audio()   { as_session wpctl set-mute @DEFAULT_AUDIO_SINK@ 1 2>/dev/null || true; }
 unmute_audio() { as_session wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 2>/dev/null || true; }
 
+# Multiple users (armada issue #31) report crackling/sped-up/warbling audio
+# after resume, sometimes for the rest of the session. freeze_processes
+# below pauses wireplumber/pipewire along with everything else for the whole
+# suspend duration via the cgroup freezer, but the audio codec's own hardware
+# clock is not something this script (or the freezer) suspends in lockstep -
+# so pipewire's cached view of the ALSA ring buffer position can be stale
+# relative to the hardware by the time both are running again. Forcing a
+# clean restart makes it re-probe the device and rebuild the graph from
+# scratch instead of trying to resync a possibly-stale clock/resampler
+# state; this is the standard mitigation for this failure class on embedded
+# ALSA setups. Must run after unfreeze_processes - user.slice being frozen
+# would also freeze the user's systemd instance this depends on.
+restart_audio() { as_session systemctl --user restart wireplumber pipewire pipewire-pulse 2>/dev/null || true; }
+
 radio_soft_blocked() {
     rfkill list "$1" 2>/dev/null | grep -q 'Soft blocked: yes'
 }
@@ -268,6 +282,7 @@ do_resume() {
     # resume_radios
     unfreeze_processes
     unblock_input
+    restart_audio
     unmute_audio
     display_on
     rm -f "$STATE_FLAG"
