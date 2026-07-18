@@ -48,7 +48,7 @@ few fixes that ended up being generally useful beyond just this one device:
   source devices (upstream only wired it up for keyboards), fixing both a
   ghost/duplicate controller in Steam and enabling a second, non-exclusive
   reader of the raw device.
-- **RGB stick lighting** (see [Stick RGB lighting](#stick-rgb-lighting)) - nine
+- **RGB stick lighting** (see [Stick RGB lighting](#stick-rgb-lighting)) - ten
   modes including a screen-color-reactive "Ambilight" mode, all configurable
   from Armada Control.
 
