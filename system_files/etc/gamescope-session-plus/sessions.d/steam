@@ -19,6 +19,17 @@ if [[ -n "${ARMADA_GAMESCOPE_FAKE_OUTPUT_MM:-}" ]]; then
     export GAMESCOPE_FAKE_OUTPUT_MM="$ARMADA_GAMESCOPE_FAKE_OUTPUT_MM"
 fi
 
+# The 1024-sample PipeWire quantum SM8250 needs is set by armada-device-quirks
+# (system-level, before pipewire/wireplumber ever start - there's no pw-metadata
+# binary on this image to poke it at session time, and it wouldn't need to be
+# session-scoped anyway).
+if [[ "${ARMADA_SOC_CLASS:-}" == "SM8250" ]]; then
+    # Steam's own auto-scale heuristic badly overestimates the UI scale for
+    # this device's small high-DPI panel; see armada-fix-steam-scale for why.
+    # No-ops once the user has picked their own value via Steam's slider.
+    /usr/libexec/armada/armada-fix-steam-scale || true
+fi
+
 export STEAM_EXTRA_COMPAT_TOOLS_PATHS="/usr/share/steam/compatibilitytools.d:${HOME}/.local/share/Steam/compatibilitytools.d"
 
 CLIENTCMD='/usr/libexec/armada/launch-steam -gamepadui -steamos3 -steampal -steamdeck -noverifyfiles'

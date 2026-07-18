@@ -1,0 +1,119 @@
+#!/usr/bin/python3
+"""Correct Steam's gamepadui interface scale on first-ever launch.
+
+Steam's own auto-scale heuristic (Settings > Display > "Automatically scale
+interface") computes a wildly oversized default for small, high-DPI panels
+like this device's 3.92" 1080x1240 display - AutoScaleFactor comes out
+around 3.1 against a 0.57-2.74 valid range, making the whole UI far too
+large. There's no known env var / launch flag to override this (the old
+STEAM_FORCE_DESKTOPUI_SCALING was dropped by Valve in favor of this
+Settings-based mechanism), so this patches Steam's own config.vdf instead.
+
+Runs once (idempotent, called every launch by the gamescope-session steam
+script but only acts while untouched): only overrides ScaleFactor while it
+still equals AutoScaleFactor, i.e. the user hasn't picked their own value via
+the in-Steam slider yet. Once they do, ScaleFactor and AutoScaleFactor
+diverge and this script becomes a no-op, so it never fights a real user
+preference.
+
+On the very first launch ever (no config.vdf yet - Steam hasn't run once to
+create it), there's nothing to patch, so Steam's own bad auto-scale heuristic
+would otherwise apply unopposed on that first, most-visible boot. Seeding
+config.vdf ahead of time does NOT fix this first paint - confirmed live that
+Steam's very first cold start renders at its own freshly-computed bad scale
+regardless of what's already on disk, only respecting the persisted
+ScaleFactor from the second launch onward. So on that first-ever run, also
+schedule a single automatic session restart a few seconds later (via
+systemd-run, detached from this session so the restart doesn't kill its own
+timer) - the user sees one brief flash of the bad scale, then lands on a
+correctly-scaled session with no action needed. Second+ launches: config.vdf
+already exists, this whole branch is skipped, no restart loop.
+"""
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+GOOD_SCALE = "1.58615207672119141"
+PLACEHOLDER_AUTO_SCALE = "3.10768294334411621"
+SEED_VDF = f"""\"InstallConfigStore\"
+{{
+\t"Software"
+\t{{
+\t\t"Valve"
+\t\t{{
+\t\t\t"Steam"
+\t\t\t{{
+\t\t\t\t"UI"
+\t\t\t\t{{
+\t\t\t\t\t"display"
+\t\t\t\t\t{{
+\t\t\t\t\t\t"Current"
+\t\t\t\t\t\t{{
+\t\t\t\t\t\t\t"AutoScaleFactor"\t\t"{PLACEHOLDER_AUTO_SCALE}"
+\t\t\t\t\t\t\t"ScaleFactor"\t\t"{GOOD_SCALE}"
+\t\t\t\t\t\t}}
+\t\t\t\t\t}}
+\t\t\t\t}}
+\t\t\t}}
+\t\t}}
+\t}}
+}}
+"""
+
+
+def main():
+    home = Path.home()
+    config_path = home / ".local/share/Steam/config/config.vdf"
+    if not config_path.is_file():
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(SEED_VDF, encoding="utf-8")
+        try:
+            subprocess.Popen(
+                [
+                    "systemd-run",
+                    "--user",
+                    "--on-active=6s",
+                    "--unit=armada-steam-scale-restart",
+                    "--",
+                    "systemctl",
+                    "--user",
+                    "restart",
+                    "gamescope-session-plus@steam.service",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError:
+            pass
+        return 0
+
+    text = config_path.read_text(encoding="utf-8", errors="replace")
+
+    # Find each `"Current" { ... }` / named-display `{ ... }` block under
+    # "display" and, only where ScaleFactor still equals AutoScaleFactor
+    # (or there's no AutoScaleFactor sibling, as in the persisted
+    # per-display block Steam caches under its own name), rewrite
+    # ScaleFactor to the known-good value.
+    block_re = re.compile(r'\{[^{}]*\}')
+
+    def fix_block(match):
+        block = match.group(0)
+        scale_m = re.search(r'("ScaleFactor"\s*")([0-9.]+)(")', block)
+        if not scale_m:
+            return block
+        auto_m = re.search(r'("AutoScaleFactor"\s*")([0-9.]+)(")', block)
+        if auto_m and auto_m.group(2) != scale_m.group(2):
+            return block  # user already picked their own value
+        return block[: scale_m.start()] + scale_m.group(1) + GOOD_SCALE + scale_m.group(3) + block[scale_m.end() :]
+
+    new_text, n = block_re.subn(fix_block, text)
+    if new_text == text:
+        return 0
+
+    config_path.write_text(new_text, encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

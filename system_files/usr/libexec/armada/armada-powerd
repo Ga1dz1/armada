@@ -510,7 +510,12 @@ class ArmadaPower:
                 write_text(policy / "scaling_min_freq", freqs[0])
                 write_text(policy / "scaling_max_freq", freqs[0])
         freqs = self.gpu_freqs()
-        if self.gpu and freqs:
+        # SM8250's GMU is known to wedge the whole SoC (unrecoverable, no
+        # kernel error logged) if its devfreq gets clamped down right as
+        # fake-suspend freezes the session - confirmed via a hard hang on
+        # every suspend attempt. Leave the GPU alone here, matching
+        # fake-suspend's own runtime-PM exception for the same hardware.
+        if self.gpu and freqs and self.cpu_device_class() != "SM8250":
             self.suspend_save["gpu"] = {
                 "governor": read_text(self.gpu / "governor"),
                 "min": read_text(self.gpu / "min_freq"),

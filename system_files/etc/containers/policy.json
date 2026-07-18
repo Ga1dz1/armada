@@ -6,13 +6,9 @@
     ],
     "transports": {
         "docker": {
-            "ghcr.io/virtudude/armada": [
+            "ghcr.io/ga1dz1/armada": [
                 {
-                    "type": "sigstoreSigned",
-                    "keyPaths": ["/etc/pki/containers/armada.pub", "/etc/pki/containers/armada-backup.pub"],
-                    "signedIdentity": {
-                        "type": "matchRepository"
-                    }
+                    "type": "insecureAcceptAnything"
                 }
             ]
         },

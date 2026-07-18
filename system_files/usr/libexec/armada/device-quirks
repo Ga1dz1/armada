@@ -39,3 +39,32 @@ fi
 if [[ "${ARMADA_SOC_CLASS:-}" == "SM8550" ]]; then
     echo 1 >/sys/devices/system/cpu/cpu0/cpuidle/state1/disable
 fi
+
+# SM8250's qdsp6 DSP path crackles at armada's shared 512-sample default (see
+# /usr/share/pipewire/*.conf.d/99-armada-buffers.conf); ROCKNIX's own kernel
+# patch (0012-ASoC-qcom-q6asm-dai) and pipewire-pulse defaults both use 1024.
+# Runs before any user session (hence pipewire) starts, so this is in place
+# for pipewire's first-ever startup, not just subsequent boots.
+if [[ "${ARMADA_SOC_CLASS:-}" == "SM8250" ]]; then
+    mkdir -p /etc/pipewire/pipewire.conf.d /etc/pipewire/pipewire-pulse.conf.d
+    cat >/etc/pipewire/pipewire.conf.d/99-armada-sm8250-buffers.conf <<'EOF'
+context.properties = {
+    default.clock.min-quantum = 1024
+}
+EOF
+    cat >/etc/pipewire/pipewire-pulse.conf.d/99-armada-sm8250-buffers.conf <<'EOF'
+pulse.properties = {
+    pulse.min.req     = 1024/48000
+    pulse.min.quantum = 1024/48000
+    pulse.min.frag    = 1024/48000
+}
+EOF
+fi
+
+# Retroid Pocket Mini V2's HTR3212-driven stick RGB (4 zones per stick, r/g/b
+# each) has no userspace owner and sits off since boot otherwise. Apply the
+# saved static color or battery-reactive color (see stick-led-color and the
+# armada-stick-led timer that keeps battery mode tracking the charge level).
+if [[ "${ARMADA_DEVICE_ID:-}" == "retroid-pocket-mini-v2" ]]; then
+    /usr/libexec/armada/stick-led-color apply || true
+fi

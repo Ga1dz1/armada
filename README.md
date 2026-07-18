@@ -46,6 +46,7 @@ Includes:
 | AYANEO Pocket DS | SM8550 | ✅ Tested |
 | AYANEO Pocket DMG | SM8550 | ✅ Tested |
 | AYANEO Pocket S 2K | SM8550 | ⚪ Untested |
+| Retroid Pocket Mini V2 | SM8250 | ⚪ Untested |
 
 ## Flash to SD card
 
@@ -62,9 +63,9 @@ internal storage so it boots without the card (see
 
    - Insert the SD card, boot into Android, and copy the `rocknix_abl` folder to
      the root of your internal storage.
-   - Identify your SoC from the device table above (`SM8550`, `SM8650`, or
-     `SM8750`). Flashing the wrong SoC's ABL can brick the device, so match it
-     carefully.
+   - Identify your SoC from the device table above (`SM8550`, `SM8650`,
+     `SM8750`, or `SM8250`). Flashing the wrong SoC's ABL can brick the
+     device, so match it carefully.
    - Using your device's built-in "run script as root" tool, browse to your SoC's
      subfolder (e.g. `rocknix_abl/SM8550`) and run `backup_abl.sh`.
    - Copy the backup (`abl_a.img` and `abl_b.img`, written into your SoC subfolder)

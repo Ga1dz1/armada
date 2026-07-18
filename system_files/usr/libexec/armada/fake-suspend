@@ -120,9 +120,11 @@ resume_runtime_pm() {
     done < <(tac "$SAVE_DIR/power-controls")
 }
 
-# The power key is left ungrabbed by block_input; wait_for_wake grabs it instead.
-INPUT_WHITELIST='pmic_pwrkey'
-
+# The power key is left ungrabbed by block_input; wait_for_wake grabs it
+# instead. Must match power_device()'s pattern below - a literal name like
+# "pmic_pwrkey" doesn't match this SoC's actual "pm8941_pwrkey" (or other
+# PMICs' equivalents), silently letting block_input steal the grab and
+# starving wait_for_wake of the wake keypress entirely.
 power_device() {
     local dev name
     for dev in /dev/input/event*; do
@@ -140,7 +142,7 @@ block_input() {
         # Never grab the lid switch — logind/resume need its events to flow.
         armada_dev_has_lid "$dev" && continue
         name="$(cat "/sys/class/input/$(basename "$dev")/device/name" 2>/dev/null)" || continue
-        echo "$name" | grep -qE "^(${INPUT_WHITELIST})$" && continue
+        case "$name" in *pwrkey*|*[Pp]ower\ [Bb]utton*) continue ;; esac
         evtest --grab "$dev" >/dev/null 2>&1 &
     done
 }
@@ -155,6 +157,7 @@ wait_for_wake() {
     lidwasclosed=0; armada_lid_closed 2>/dev/null && lidwasclosed=1
     if [[ -n "$pdev" ]]; then
         log "waiting for wake (power key ${pdev})"
+        exec 3< <(evtest --grab "$pdev" 2>/dev/null)
         while true; do
             [[ -f "$WAKE_FLAG" ]] && { log "wake (flag)"; break; }
             if armada_lid_closed 2>/dev/null; then
@@ -162,15 +165,22 @@ wait_for_wake() {
             elif (( lidwasclosed )); then
                 log "wake (lid open)"; break
             fi
-            if IFS= read -r -t 1 line; then
+            if IFS= read -r -t 1 -u 3 line; then
                 case "$line" in
                     *"(KEY_POWER), value 1"*)
                         if (( SECONDS - t0 >= 1 )) && ! armada_lid_closed 2>/dev/null; then log "wake (power key)"; break; fi ;;
                 esac
             elif (( $? <= 128 )); then
-                sleep 1   # evtest ended (not a read timeout); avoid a busy loop
+                # evtest exited (not a read timeout, e.g. OOM or the input
+                # device re-enumerating when the display power-cycles) -
+                # re-grab it rather than going permanently deaf to the power
+                # key, which otherwise strands the device asleep forever.
+                log "evtest exited, re-grabbing ${pdev}"
+                sleep 1
+                exec 3< <(evtest --grab "$pdev" 2>/dev/null)
             fi
-        done < <(evtest --grab "$pdev" 2>/dev/null)
+        done
+        exec 3<&-
     else
         log "no power device; waiting on wake flag"
         while :; do

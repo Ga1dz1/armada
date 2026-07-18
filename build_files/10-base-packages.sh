@@ -91,7 +91,7 @@ dnf5 -y install --setopt=install_weak_deps=False \
     protonplus \
     heroic-games-launcher
 
-dnf5 -y install --setopt=install_weak_deps=False \
+dnf5 -y install --setopt=install_weak_deps=False --skip-unavailable \
     --repofrompath 'copr-ublue-os-packages,https://download.copr.fedorainfracloud.org/results/ublue-os/packages/fedora-$releasever-$basearch/' \
     --setopt=copr-ublue-os-packages.gpgcheck=0 \
     --setopt=copr-ublue-os-packages.repo_gpgcheck=0 \
