@@ -156,11 +156,29 @@ def action_get_stick_led(request):
 
 
 STICK_LED_PARAMS = ("speed", "intensity", "size")
+FLASH_BUTTONS = (
+    "south", "east", "north", "west",
+    "l1", "r1", "l3", "r3", "l4", "r4",
+    "start", "select",
+    "dpad_up", "dpad_down", "dpad_left", "dpad_right",
+    "other",
+)
+
+
+def action_set_stick_led_flash_color(request):
+    button = str(request.get("button", ""))
+    value = str(request.get("value", ""))
+    if button not in FLASH_BUTTONS:
+        raise ValueError("invalid flash button")
+    if not re.fullmatch(r"[0-9A-Fa-f]{6}", value):
+        raise ValueError("invalid color")
+    run(["/usr/libexec/armada/stick-led-color", "set-flash-color", button, value.upper()], timeout=5)
+    return _stick_led_state()
 
 
 def _stick_led_state():
     result = subprocess.check_output(["/usr/libexec/armada/stick-led-color", "get"], text=True, timeout=5)
-    state = {"mode": "static", "color": "0050FF", "screen_link": "0", "params": {}}
+    state = {"mode": "static", "color": "0050FF", "screen_link": "0", "params": {}, "flashColors": {}}
     for line in result.splitlines():
         key, sep, value = line.partition("=")
         if not sep:
@@ -168,6 +186,9 @@ def _stick_led_state():
         key, value = key.strip(), value.strip()
         if key in ("mode", "color", "screen_link"):
             state[key] = value
+        elif key.startswith("flash_") and key[len("flash_"):] in FLASH_BUTTONS:
+            if re.fullmatch(r"[0-9A-Fa-f]{6}", value or ""):
+                state["flashColors"][key[len("flash_"):]] = value.upper()
         elif "_" in key and key.split("_", 1)[0] in STICK_LED_PARAMS:
             try:
                 state["params"][key] = float(value)
@@ -235,6 +256,7 @@ ACTIONS = {
     "set_stick_led_mode": action_set_stick_led_mode,
     "set_stick_led_screen_link": action_set_stick_led_screen_link,
     "set_stick_led_param": action_set_stick_led_param,
+    "set_stick_led_flash_color": action_set_stick_led_flash_color,
 }
 
 

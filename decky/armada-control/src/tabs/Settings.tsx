@@ -5,6 +5,7 @@ import {
   setControllerType as applyControllerType,
   setSshEnabled as applySshEnabled,
   setStickLedColor as applyStickLedColor,
+  setStickLedFlashColor as applyStickLedFlashColor,
   setStickLedMode as applyStickLedMode,
   setStickLedParam as applyStickLedParam,
   setStickLedScreenLink as applyStickLedScreenLink,
@@ -44,6 +45,27 @@ const MODE_OPTIONS: { data: string; label: string }[] = [
   { data: "ambilight", label: "Ambilight (matches screen)" },
 ];
 const COLOR_VISIBLE_MODES = new Set(["static", "breathing", "chase", "alternating"]);
+
+const FLASH_BUTTON_OPTIONS: { data: string; label: string }[] = [
+  { data: "south", label: "South" },
+  { data: "east", label: "East" },
+  { data: "north", label: "North" },
+  { data: "west", label: "West" },
+  { data: "l1", label: "L1" },
+  { data: "r1", label: "R1" },
+  { data: "l3", label: "L3 (left stick click)" },
+  { data: "r3", label: "R3 (right stick click)" },
+  { data: "l4", label: "L4 (left paddle)" },
+  { data: "r4", label: "R4 (right paddle)" },
+  { data: "start", label: "Start" },
+  { data: "select", label: "Select" },
+  { data: "dpad_up", label: "D-Pad Up" },
+  { data: "dpad_down", label: "D-Pad Down" },
+  { data: "dpad_left", label: "D-Pad Left" },
+  { data: "dpad_right", label: "D-Pad Right" },
+  { data: "other", label: "Other buttons" },
+];
+const DEFAULT_FLASH_COLOR = "FFFFFF";
 
 function aliasMode(mode: string): string {
   return mode === "battery-breathing" ? "breathing" : mode;
@@ -107,6 +129,8 @@ export function Settings({ config, setConfig }: {
     }
   };
   const [colorsExpanded, setColorsExpanded] = useState(false);
+  const [flashExpanded, setFlashExpanded] = useState(false);
+  const [flashButton, setFlashButton] = useState("south");
   const stickLed = config.stickLed;
   const mode = stickLed?.mode || "static";
   const setStickLedMode = async (nextMode: string) => {
@@ -147,6 +171,31 @@ export function Settings({ config, setConfig }: {
     const rgb = hexToRgb(stickLed.color);
     rgb[channel] = value;
     void setStickLedColor(rgbToHex(rgb[0], rgb[1], rgb[2]));
+  };
+  const setStickLedFlashColor = async (hex: string) => {
+    if (!stickLed) return;
+    const previous = stickLed.flashColors[flashButton];
+    setConfig((current) =>
+      current
+        ? { ...current, stickLed: { ...current.stickLed, flashColors: { ...current.stickLed.flashColors, [flashButton]: hex } } }
+        : current,
+    );
+    try {
+      const applied = await applyStickLedFlashColor(flashButton, hex);
+      setConfig((current) => (current ? { ...current, stickLed: applied } : current));
+    } catch (error) {
+      setConfig((current) =>
+        current
+          ? { ...current, stickLed: { ...current.stickLed, flashColors: { ...current.stickLed.flashColors, [flashButton]: previous } } }
+          : current,
+      );
+    }
+  };
+  const setFlashChannel = (channel: 0 | 1 | 2, value: number) => {
+    if (!stickLed) return;
+    const rgb = hexToRgb(stickLed.flashColors[flashButton] ?? DEFAULT_FLASH_COLOR);
+    rgb[channel] = value;
+    void setStickLedFlashColor(rgbToHex(rgb[0], rgb[1], rgb[2]));
   };
   const setStickLedParam = async (param: string, backendValue: number) => {
     if (!stickLed) return;
@@ -237,6 +286,47 @@ export function Settings({ config, setConfig }: {
                     max={255}
                     step={1}
                     onChange={(value) => setStickLedChannel(2, value)}
+                  />
+                </>
+              )}
+            </>
+          )}
+          {mode === "reactive" && (
+            <>
+              <ButtonItem layout="below" onClick={() => setFlashExpanded((expanded) => !expanded)}>
+                {flashExpanded ? "Hide flash colors ▲" : "Show flash colors ▼"}
+              </ButtonItem>
+              {flashExpanded && (
+                <>
+                  <SelectEdit label="Button" value={flashButton} options={FLASH_BUTTON_OPTIONS} onChange={setFlashButton} />
+                  {PRESET_COLORS.map((preset) => (
+                    <ButtonItem key={preset.value} layout="below" onClick={() => setStickLedFlashColor(preset.value)}>
+                      {preset.label}
+                    </ButtonItem>
+                  ))}
+                  <SliderEdit
+                    label="Red"
+                    value={hexToRgb(stickLed.flashColors[flashButton] ?? DEFAULT_FLASH_COLOR)[0]}
+                    min={0}
+                    max={255}
+                    step={1}
+                    onChange={(value) => setFlashChannel(0, value)}
+                  />
+                  <SliderEdit
+                    label="Green"
+                    value={hexToRgb(stickLed.flashColors[flashButton] ?? DEFAULT_FLASH_COLOR)[1]}
+                    min={0}
+                    max={255}
+                    step={1}
+                    onChange={(value) => setFlashChannel(1, value)}
+                  />
+                  <SliderEdit
+                    label="Blue"
+                    value={hexToRgb(stickLed.flashColors[flashButton] ?? DEFAULT_FLASH_COLOR)[2]}
+                    min={0}
+                    max={255}
+                    step={1}
+                    onChange={(value) => setFlashChannel(2, value)}
                   />
                 </>
               )}

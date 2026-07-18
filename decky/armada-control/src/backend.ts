@@ -22,6 +22,8 @@ export const setStickLedMode = (mode: string) => call<[string], StickLedState>("
 export const setStickLedScreenLink = (enabled: boolean) => call<[boolean], StickLedState>("set_stick_led_screen_link", enabled);
 export const setStickLedParam = (param: string, mode: string, value: number) =>
   call<[string, string, number], StickLedState>("set_stick_led_param", param, mode, value);
+export const setStickLedFlashColor = (button: string, value: string) =>
+  call<[string, string], StickLedState>("set_stick_led_flash_color", button, value);
 export const getControllerState = () => call<[], CalibrationState>("get_controller_state");
 export const saveCalibration = (capture: Capture) => call<[Capture], CalibrationState>("save_calibration", capture);
 export const resetCalibration = () => call<[], CalibrationState>("reset_calibration");

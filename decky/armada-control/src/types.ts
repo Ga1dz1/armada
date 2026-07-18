@@ -76,6 +76,7 @@ export interface StickLedState {
   color: string;
   screenLink: boolean;
   params: Record<string, number>;
+  flashColors: Record<string, string>;
 }
 
 export interface Config {

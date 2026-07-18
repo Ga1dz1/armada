@@ -10,11 +10,37 @@ STEAM_FORCE_DESKTOPUI_SCALING was dropped by Valve in favor of this
 Settings-based mechanism), so this patches Steam's own config.vdf instead.
 
 Runs once (idempotent, called every launch by the gamescope-session steam
-script but only acts while untouched): only overrides ScaleFactor while it
-still equals AutoScaleFactor, i.e. the user hasn't picked their own value via
-the in-Steam slider yet. Once they do, ScaleFactor and AutoScaleFactor
-diverge and this script becomes a no-op, so it never fights a real user
-preference.
+script but only acts while untouched), and patches config.vdf's "display"
+section - of which there can be more than one, in different parts of the
+file (Steam appears to keep an older generic scale cache alongside a newer
+one keyed by a computed per-display "name", e.g. "External: gamescope
+4\"|||Windowed" for this device) - each independently. Two different fixes
+are needed per section, because they turned out to behave completely
+differently on real hardware (confirmed via live testing on an actual
+device, not just reasoning about the file format):
+
+  "Current": Steam recomputes ScaleFactor/AutoScaleFactor here from scratch
+  on every single launch for a per-display entry, discarding whatever was on
+  disk beforehand - so patching only this (an earlier version of this
+  script did only this) can never survive a restart. It's still worth
+  fixing here too, since it's what's rendered on the very first frame of
+  *this* launch, before Steam's own restore-from-cache (see below) would
+  apply on the *next* one.
+
+  The per-display named sibling key (e.g. `"External: gamescope
+  4\"|||Windowed" { "ScaleFactor" ... }`, a sibling of "Current" under the
+  same "display" object, keyed by the exact string in Current's "name"
+  field): this is Steam's real override cache - confirmed live that once it
+  holds a value, Steam restores it into "Current" on the *next* launch. It
+  has no "AutoScaleFactor" field to compare against, so an earlier version
+  of this script's "only fix it while it still matches auto" logic didn't
+  apply here - it just condition-lessly overwrote whatever was in any block
+  with a "ScaleFactor" and no "AutoScaleFactor", which meant it clobbered a
+  real value the user had already picked via Steam's own slider back to
+  this script's hardcoded default on every subsequent launch (confirmed live
+  by watching it happen). Fixed by only ever seeding this cache while it's
+  still the empty placeholder Steam creates the first time it sees a given
+  display - never once it holds any value, ours or the user's.
 
 On the very first launch ever (no config.vdf yet - Steam hasn't run once to
 create it), there's nothing to patch, so Steam's own bad auto-scale heuristic
@@ -62,6 +88,85 @@ SEED_VDF = f"""\"InstallConfigStore\"
 """
 
 
+def _matching_brace(text, open_idx):
+    """text[open_idx] must be '{'. Returns the index of the matching '}'."""
+    depth = 0
+    for i in range(open_idx, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    raise ValueError("unbalanced braces")
+
+
+def _patch_current_block(block):
+    scale_m = re.search(r'("ScaleFactor"\s*")([0-9.]+)(")', block)
+    if not scale_m:
+        return block, False
+    auto_m = re.search(r'("AutoScaleFactor"\s*")([0-9.]+)(")', block)
+    if auto_m and auto_m.group(2) != scale_m.group(2):
+        return block, False  # user (or a prior run) already diverged it
+    if scale_m.group(2) == GOOD_SCALE:
+        return block, False
+    fixed = block[: scale_m.start()] + scale_m.group(1) + GOOD_SCALE + scale_m.group(3) + block[scale_m.end() :]
+    return fixed, True
+
+
+def _patch_display_section(text, open_idx, close_idx):
+    section = text[open_idx : close_idx + 1]
+    changed = False
+
+    current_m = re.search(r'"Current"\s*\{', section)
+    display_name = None
+    if current_m:
+        cur_open = section.index("{", current_m.start())
+        cur_close = _matching_brace(section, cur_open)
+        current_block = section[cur_open : cur_close + 1]
+        new_current, did_change = _patch_current_block(current_block)
+        if did_change:
+            section = section[:cur_open] + new_current + section[cur_close + 1 :]
+            changed = True
+        name_m = re.search(r'"name"\s*"((?:[^"\\]|\\.)*)"', current_block)
+        if name_m:
+            display_name = name_m.group(1)
+
+    if display_name:
+        named_re = re.compile(r'"' + re.escape(display_name) + r'"\s*\{')
+        named_m = named_re.search(section)
+        if named_m:
+            n_open = section.index("{", named_m.start())
+            n_close = _matching_brace(section, n_open)
+            named_block = section[n_open : n_close + 1]
+            if not re.search(r'"ScaleFactor"', named_block) and re.fullmatch(r"\{\s*\}", named_block):
+                new_named = '{\n\t\t\t\t"ScaleFactor"\t\t"' + GOOD_SCALE + '"\n\t\t\t}'
+                section = section[:n_open] + new_named + section[n_close + 1 :]
+                changed = True
+            # Anything else (already has a ScaleFactor, or an unexpected
+            # shape) is left exactly as-is - see module docstring for why.
+        else:
+            insertion = '\n\t\t\t"' + display_name + '"\n\t\t\t{\n\t\t\t\t"ScaleFactor"\t\t"' + GOOD_SCALE + '"\n\t\t\t}'
+            section = section[:-1] + insertion + "\n\t\t" + section[-1]
+            changed = True
+
+    return text[:open_idx] + section + text[close_idx + 1 :], changed
+
+
+def _patch_config(text):
+    changed_any = False
+    # Find every `"display"` section from the end of the file backward, so
+    # patching one (which can change its length) never invalidates the
+    # offsets of a section found earlier in the file.
+    matches = list(re.finditer(r'"display"\s*\{', text))
+    for m in reversed(matches):
+        open_idx = text.index("{", m.start())
+        close_idx = _matching_brace(text, open_idx)
+        text, changed = _patch_display_section(text, open_idx, close_idx)
+        changed_any = changed_any or changed
+    return text, changed_any
+
+
 def main():
     home = Path.home()
     config_path = home / ".local/share/Steam/config/config.vdf"
@@ -89,26 +194,8 @@ def main():
         return 0
 
     text = config_path.read_text(encoding="utf-8", errors="replace")
-
-    # Find each `"Current" { ... }` / named-display `{ ... }` block under
-    # "display" and, only where ScaleFactor still equals AutoScaleFactor
-    # (or there's no AutoScaleFactor sibling, as in the persisted
-    # per-display block Steam caches under its own name), rewrite
-    # ScaleFactor to the known-good value.
-    block_re = re.compile(r'\{[^{}]*\}')
-
-    def fix_block(match):
-        block = match.group(0)
-        scale_m = re.search(r'("ScaleFactor"\s*")([0-9.]+)(")', block)
-        if not scale_m:
-            return block
-        auto_m = re.search(r'("AutoScaleFactor"\s*")([0-9.]+)(")', block)
-        if auto_m and auto_m.group(2) != scale_m.group(2):
-            return block  # user already picked their own value
-        return block[: scale_m.start()] + scale_m.group(1) + GOOD_SCALE + scale_m.group(3) + block[scale_m.end() :]
-
-    new_text, n = block_re.subn(fix_block, text)
-    if new_text == text:
+    new_text, changed = _patch_config(text)
+    if not changed:
         return 0
 
     config_path.write_text(new_text, encoding="utf-8")
