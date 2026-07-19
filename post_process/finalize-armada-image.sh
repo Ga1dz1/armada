@@ -90,6 +90,13 @@ shopt -u nullglob
 [[ -z "${KEEP_GRUB:-}" && "${#sm8250_dtbs[@]}" -gt 0 ]] && KEEP_GRUB=1
 
 if [[ -n "${KEEP_GRUB:-}" ]]; then
+    # save_env/load_env (used below to remember the last-booted entry) need
+    # grubenv to already exist in the right format - it can't create one
+    # from scratch. Fedora's BLS/grub2-mkconfig setup normally provisions
+    # this, but don't rely on that holding across image/tooling changes.
+    if ! sudo test -f "${WORK}/boot/grub2/grubenv"; then
+        sudo grub-editenv "${WORK}/boot/grub2/grubenv" create
+    fi
     # blscfg (called from the stock, do-not-edit grub.cfg) renders this same
     # BLS entry as an extra, generic "Fedora Linux NN" menu item alongside the
     # named ones below - confusing since it's unclear which device it boots.
@@ -110,20 +117,46 @@ if [[ -n "${KEEP_GRUB:-}" ]]; then
         echo "# comment above in the script that wrote this file."
         echo "set timeout_style=menu"
         echo "set timeout=15"
+        # Button input picking a menu entry can be unreliable on some of
+        # these devices (e.g. reported broken on Flip2 - no per-device
+        # hardware to verify against). Whichever entry actually boots -
+        # whether by an explicit press or by being left highlighted when
+        # the 15s timeout expires, GRUB boots whatever is currently
+        # highlighted either way - saves itself as the default for every
+        # later boot, so at most one boot ever needs working button input
+        # per physical device. `load_env`/`save_env` need grubenv on the
+        # search path; harmless no-op if that file can't be found yet.
+        echo "if [ -s \$prefix/grubenv ]; then load_env; fi"
         default_id=""
+        ids=()
         for dtb in "${sm8250_dtbs[@]}"; do
             base=$(basename "${dtb}" .dtb)
             model=$(sudo fdtget -t s "${dtb}" / model 2>/dev/null) || model="${base}"
             id=$(tr '[:upper:]' '[:lower:]' <<<"${model}" | tr -cs 'a-z0-9' '-' | sed 's/^-\+//; s/-\+$//')
+            ids+=("${id}")
             [[ -z "${default_id}" ]] && default_id="${id}"
             [[ "${base}" == *rpminiv2 ]] && default_id="${id}"
             printf "\nmenuentry '%s' --id '%s' {\n" "${model}" "${id}"
+            # Recording OUR OWN id here, not whatever "default" happened to
+            # be set to - GRUB doesn't retroactively update that variable
+            # to match the entry actually booted, so save_env-ing it as-is
+            # would just persist the prior static default every time.
+            printf "    set default='%s'\n" "${id}"
+            printf "    save_env default\n"
             printf "    linux %s %s\n" "${LINUX}" "${OPTIONS}"
             printf "    initrd %s\n" "${INITRD}"
             printf "    devicetree %s/qcom/%s.dtb\n" "${FDTDIR}" "${base}"
             printf "}\n"
         done
+        # Only trust a remembered choice if it's still one of this image's
+        # known entries (a stale saved_entry from a previous, differently
+        # built image must not silently override the computed default).
         printf "\nset default='%s'\n" "${default_id}"
+        printf "if [ -n \"\${saved_entry}\" ]; then\n"
+        for id in "${ids[@]}"; do
+            printf "    if [ \"\${saved_entry}\" = '%s' ]; then set default='%s'; fi\n" "${id}" "${id}"
+        done
+        printf "fi\n"
     } | sudo tee "${WORK}/boot/grub2/custom.cfg" >/dev/null
 fi
 sudo sync
