@@ -26,6 +26,8 @@
 #    genuinely can't wake on the power key (the thing we can't fully verify
 #    without a human pressing it) still comes back on its own rather than
 #    staying asleep indefinitely. Configurable, off by default.
+#  - wifi reconnection reliability: see suspend_radios()/resume_radios()
+#    below for why the radio is explicitly blocked/unblocked around sleep.
 set -uo pipefail
 
 [[ "${2:-}" == "suspend" ]] || exit 0
@@ -75,14 +77,53 @@ disarm_watchdog() {
     echo 0 > /sys/class/rtc/rtc0/wakealarm 2>/dev/null || true
 }
 
+# wifi/NetworkManager reconnection after the deauth/reassociate a real
+# resume forces was observed taking anywhere from 0s to 20+ minutes (once
+# effectively indefinitely, needing a physical power cycle) depending on
+# the AP environment, even though the kernel-level suspend/resume itself
+# is consistently done in ~2s. Root cause looked like NetworkManager's own
+# reconnect-after-unexpected-deauth handling (roaming/retry logic reacting
+# to a surprise disconnect), not the radio or driver itself. Explicitly
+# blocking the radio before sleep and unblocking it after gives
+# NetworkManager a clean, deliberate "radio just came on" event instead -
+# confirmed live across repeated real suspend/resume cycles: wifi
+# reassociated in 1-9 seconds every time, versus the wild variance seen
+# without this. (BSSID-pinning was tried earlier as a different fix for
+# the same symptom and made things categorically worse - don't do that.)
+suspend_radios() {
+    command -v rfkill >/dev/null 2>&1 || return 0
+    : > "$SAVE_DIR/radios"
+    local kind
+    for kind in wifi bluetooth; do
+        rfkill list "$kind" >/dev/null 2>&1 || continue
+        rfkill list "$kind" 2>/dev/null | grep -q 'Soft blocked: yes' && continue
+        if rfkill block "$kind"; then
+            printf '%s\n' "$kind" >> "$SAVE_DIR/radios"
+        else
+            log "failed to block ${kind}"
+        fi
+    done
+}
+resume_radios() {
+    [[ -r "$SAVE_DIR/radios" ]] || return 0
+    local kind
+    while IFS= read -r kind; do
+        [[ -n "$kind" ]] || continue
+        rfkill unblock "$kind" || log "failed to restore ${kind}"
+    done < "$SAVE_DIR/radios"
+}
+
+SAVE_DIR="/run/armada/real-suspend"
+
 case "$1" in
     pre)
         as_session wpctl set-mute @DEFAULT_AUDIO_SINK@ 1 2>/dev/null || true
-        mkdir -p /run/armada
+        mkdir -p /run/armada "$SAVE_DIR"
         touch "$STICK_LED_FLAG"
         # Give the stick-led daemon (polls every 0.5s) a full cycle to blank
         # the LEDs before the kernel's own freeze_processes() takes it too.
         sleep 0.6
+        suspend_radios
         arm_watchdog
         log "pre-suspend done"
         ;;
@@ -96,20 +137,9 @@ case "$1" in
             timeout 2 evtest --grab "$pdev" >/dev/null 2>&1
         fi
         date +%s%3N > "$RESUME_FLAG" 2>/dev/null || true
+        resume_radios
+        rm -rf "$SAVE_DIR"
         as_session wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 2>/dev/null || true
         log "post-resume done"
         ;;
 esac
-
-# Known gap, deliberately not worked around here: wifi/NetworkManager
-# reconnection after the deauth/reassociate a real resume forces can take
-# anywhere from 0s to 20+ minutes depending on the AP environment (observed
-# on a dual-radio mesh network with marginal signal between nodes - the
-# kernel-level suspend/resume itself is consistently done in ~2s regardless).
-# Pinning the NetworkManager connection to one BSSID as a "fix" was tried and
-# made things categorically worse: it traded the occasional slow reconnect
-# for total inability to reconnect at all once that specific node became
-# unavailable, needing a physical power cycle to recover. Don't do that.
-# This is why ARMADA_SUSPEND_MODE stays "fake" for any device whose wifi
-# environment hasn't been verified stable through many real suspend/resume
-# cycles - fake-suspend sidesteps the whole problem by never dropping wifi.
