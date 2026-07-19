@@ -564,8 +564,19 @@ class ArmadaPower:
         if not freqs:
             return
         settings = settings or self.profile_settings()
-        write_text(self.gpu / "governor", "simple_ondemand")
         max_freq = self.choose_at_most(freqs, int(freqs[-1] * settings["gpu_max"]))
+        if settings["cpu_governor"] == "performance":
+            # simple_ondemand ramps the GPU clock up/down reactively based on
+            # load, which has some lag - fine for battery-conscious profiles,
+            # but works against the Performance profile's whole point (CPU
+            # governor is already pinned at max there, not ramped). Pin the
+            # GPU the same way: devfreq's own "performance" governor always
+            # runs at whatever max_freq is configured, no ramping involved.
+            write_text(self.gpu / "governor", "performance")
+            write_text(self.gpu / "max_freq", max_freq)
+            write_text(self.gpu / "min_freq", max_freq)
+            return
+        write_text(self.gpu / "governor", "simple_ondemand")
         min_target = int(freqs[-1] * settings["gpu_min"])
         min_freq = self.choose_at_least(freqs, min_target) if min_target else freqs[0]
         write_text(self.gpu / "min_freq", freqs[0])
