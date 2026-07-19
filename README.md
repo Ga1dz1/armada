@@ -57,10 +57,14 @@ The kernel/DTS side lives in
 fork of virtudude's own
 [armada-packages](https://github.com/virtudude/armada-packages).
 
-**Next up:** Retroid Pocket 5 and Retroid Pocket Flip 2 (both SM8250) - the
-GRUB menu and device-profile plumbing are already built to pick up any
-`sm8250-retroidpocket-*` device tree automatically, so bringing these up is
-mainly kernel/DTS + device-profile work, not new infrastructure.
+**Retroid Pocket 5 and Retroid Pocket Flip2** (both SM8250) have their device
+trees ported from ROCKNIX and device profiles wired up, picked up
+automatically by the GRUB menu built for Mini V2 - but **completely
+unverified**, with no hardware to test any of it on yet. Panel orientation
+and physical size in particular are first guesses, not measured values;
+audio is assumed to work off the same generic UCM2 profile Mini V2 uses,
+also unconfirmed. If you have one of these devices, testing reports (and
+fixes) are very welcome.
 
 ## Supported devices
 

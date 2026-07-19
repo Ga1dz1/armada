@@ -61,10 +61,15 @@ pulse.properties = {
 EOF
 fi
 
-# Retroid Pocket Mini V2's HTR3212-driven stick RGB (4 zones per stick, r/g/b
-# each) has no userspace owner and sits off since boot otherwise. Apply the
-# saved static color or battery-reactive color (see stick-led-color and the
-# armada-stick-led timer that keeps battery mode tracking the charge level).
-if [[ "${ARMADA_DEVICE_ID:-}" == "retroid-pocket-mini-v2" ]]; then
-    /usr/libexec/armada/stick-led-color apply || true
-fi
+# HTR3212-driven stick RGB (4 zones per stick, r/g/b each) has no userspace
+# owner and sits off since boot otherwise. Apply the saved static color or
+# battery-reactive color (see stick-led-color and the armada-stick-led
+# service that keeps battery mode tracking the charge level). Retroid Pocket
+# 5 and Flip2 share the same LED zone layout in their device tree as Mini
+# V2 (unverified on real hardware, but the DTS nodes match), so they're
+# included here too.
+case "${ARMADA_DEVICE_ID:-}" in
+    retroid-pocket-mini-v2 | retroid-pocket-5 | retroid-pocket-flip2)
+        /usr/libexec/armada/stick-led-color apply || true
+        ;;
+esac

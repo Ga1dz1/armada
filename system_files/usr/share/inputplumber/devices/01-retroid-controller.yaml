@@ -9,13 +9,26 @@ kind: CompositeDevice
 name: Retroid Layout
 
 # Only use this profile if *any* of the given matches matches. If this list is
-# empty, then the source devices will *always* be checked.
+# empty, then the source devices will *always* be checked. Same gamepad MCU
+# across the whole SM8250 Retroid family (confirmed via ROCKNIX's own device
+# tree, which ships one identical copy of this file across all of them, not
+# per-model), so one composite device config covers all three.
 matches:
   - udev:
       sys_path: /sys/firmware/devicetree/base
       attributes:
         - name: model
           value: Retroid Pocket Mini V2
+  - udev:
+      sys_path: /sys/firmware/devicetree/base
+      attributes:
+        - name: model
+          value: Retroid Pocket 5
+  - udev:
+      sys_path: /sys/firmware/devicetree/base
+      attributes:
+        - name: model
+          value: Retroid Pocket Flip2
 
 # Only allow a single source device per composite device of this type.
 single_source: false
