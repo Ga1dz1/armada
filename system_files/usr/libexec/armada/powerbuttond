@@ -42,6 +42,22 @@ pdev="$(power_device || true)"
 log "watching $pdev"
 # Long-press fires while still held, not on release.
 LONG_MS=1000
+# Real suspend (see the 50-armada-real-suspend systemd-sleep hook) grabs the
+# power key for a couple seconds right after resume, which handles this in
+# the common case - this is a backstop for the race where our own reader
+# wakes up and sees the wake press before that grab lands. Any press within
+# this many ms of a recorded resume is treated as wake noise, not a request.
+REBOUND_GUARD_MS=2500
+RESUME_FLAG="/run/armada/real-suspend.resumed-at"
+
+just_resumed() {
+    local at
+    [[ -r "$RESUME_FLAG" ]] || return 1
+    at="$(cat "$RESUME_FLAG" 2>/dev/null)" || return 1
+    [[ "$at" =~ ^[0-9]+$ ]] || return 1
+    (( ( $(date +%s%3N) - at ) < REBOUND_GUARD_MS ))
+}
+
 exec 3< <(evtest "$pdev" 2>/dev/null)
 state=idle; press_ms=0
 while :; do
@@ -58,7 +74,7 @@ while :; do
             elif (( $? <= 128 )); then
                 break   # evtest ended (not a timeout); launch-steam relaunches next session
             fi ;;
-        draining)  # long press already fired; swallow the release
+        draining)  # long press already fired, or a rebound press is being swallowed; ignore the release
             IFS= read -r -u 3 line || break
             case "$line" in *"(KEY_POWER), value 0"*) state=idle ;; esac ;;
         *)  # idle: a release here is the tail of a wake press fake-suspend grabbed -> ignore
@@ -66,6 +82,7 @@ while :; do
             case "$line" in
                 *"(KEY_POWER), value 1"*)
                     if armada_lid_closed 2>/dev/null; then log "power w/ lid closed -> ignored"
+                    elif just_resumed; then log "power press just after real-suspend resume -> rebound guard"; state=draining
                     else press_ms=$(date +%s%3N); state=held; fi ;;
             esac ;;
     esac
