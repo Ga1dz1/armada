@@ -51,6 +51,23 @@ display_on() {
 mute_audio()   { as_session wpctl set-mute @DEFAULT_AUDIO_SINK@ 1 2>/dev/null || true; }
 unmute_audio() { as_session wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 2>/dev/null || true; }
 
+# Multiple users (armada issue #31) reported crackling/sped-up/warbling
+# audio after resume, sometimes for the rest of the session, and sometimes
+# outright silence in a client that had a stream open before sleeping (e.g.
+# Steam's own UI sounds) while freshly-opened streams (e.g. a game launched
+# after resume) were fine. Root cause: freeze_processes() used to freeze the
+# whole session, including pipewire/wireplumber themselves, for the sleep
+# duration - but the audio codec's hardware clock is never suspended in
+# lockstep (fake-suspend never touches the hardware), so pipewire's own
+# stream/clock bookkeeping went stale relative to the ring buffer by the
+# time it thawed. Restarting wireplumber/pipewire/pipewire-pulse on resume
+# was tried as a fix and confirmed to run at the right time, but that kills
+# existing client connections, which don't reconnect on their own - traded
+# warbling audio for total silence, a worse outcome. Fixed properly by
+# freeze_processes() no longer touching pipewire/wireplumber's cgroup at
+# all (see session_cgroup() - it only freezes gamescope/Steam's own cgroup),
+# so there's nothing to resync in the first place.
+
 radio_soft_blocked() {
     rfkill list "$1" 2>/dev/null | grep -q 'Soft blocked: yes'
 }
@@ -120,9 +137,11 @@ resume_runtime_pm() {
     done < <(tac "$SAVE_DIR/power-controls")
 }
 
-# The power key is left ungrabbed by block_input; wait_for_wake grabs it instead.
-INPUT_WHITELIST='pmic_pwrkey'
-
+# The power key is left ungrabbed by block_input; wait_for_wake grabs it
+# instead. Must match power_device()'s pattern below - a literal name like
+# "pmic_pwrkey" doesn't match this SoC's actual "pm8941_pwrkey" (or other
+# PMICs' equivalents), silently letting block_input steal the grab and
+# starving wait_for_wake of the wake keypress entirely.
 power_device() {
     local dev name
     for dev in /dev/input/event*; do
@@ -140,7 +159,7 @@ block_input() {
         # Never grab the lid switch — logind/resume need its events to flow.
         armada_dev_has_lid "$dev" && continue
         name="$(cat "/sys/class/input/$(basename "$dev")/device/name" 2>/dev/null)" || continue
-        echo "$name" | grep -qE "^(${INPUT_WHITELIST})$" && continue
+        case "$name" in *pwrkey*|*[Pp]ower\ [Bb]utton*) continue ;; esac
         evtest --grab "$dev" >/dev/null 2>&1 &
     done
 }
@@ -155,6 +174,7 @@ wait_for_wake() {
     lidwasclosed=0; armada_lid_closed 2>/dev/null && lidwasclosed=1
     if [[ -n "$pdev" ]]; then
         log "waiting for wake (power key ${pdev})"
+        exec 3< <(evtest --grab "$pdev" 2>/dev/null)
         while true; do
             [[ -f "$WAKE_FLAG" ]] && { log "wake (flag)"; break; }
             if armada_lid_closed 2>/dev/null; then
@@ -162,15 +182,22 @@ wait_for_wake() {
             elif (( lidwasclosed )); then
                 log "wake (lid open)"; break
             fi
-            if IFS= read -r -t 1 line; then
+            if IFS= read -r -t 1 -u 3 line; then
                 case "$line" in
                     *"(KEY_POWER), value 1"*)
                         if (( SECONDS - t0 >= 1 )) && ! armada_lid_closed 2>/dev/null; then log "wake (power key)"; break; fi ;;
                 esac
             elif (( $? <= 128 )); then
-                sleep 1   # evtest ended (not a read timeout); avoid a busy loop
+                # evtest exited (not a read timeout, e.g. OOM or the input
+                # device re-enumerating when the display power-cycles) -
+                # re-grab it rather than going permanently deaf to the power
+                # key, which otherwise strands the device asleep forever.
+                log "evtest exited, re-grabbing ${pdev}"
+                sleep 1
+                exec 3< <(evtest --grab "$pdev" 2>/dev/null)
             fi
-        done < <(evtest --grab "$pdev" 2>/dev/null)
+        done
+        exec 3<&-
     else
         log "no power device; waiting on wake flag"
         while :; do
@@ -186,26 +213,42 @@ wait_for_wake() {
 # Values are the 15-char /proc comm.
 SESSION_KEEP_COMMS='gamescope-wl|gamescope-sessi|Xwayland|mangoapp|steam_notif_dae'
 
-session_procs_file() {
+session_cgroup() {
     local gspid cg
     gspid="$(pgrep -f 'bin/gamescope -W' | head -1)"
     [[ -n "$gspid" ]] || return 1
     cg="$(awk -F: '/0::/{print $3}' "/proc/${gspid}/cgroup" 2>/dev/null)"
     [[ -n "$cg" ]] || return 1
+    echo "$cg"
+}
+
+session_procs_file() {
+    local cg; cg="$(session_cgroup)" || return 1
     echo "/sys/fs/cgroup${cg}/cgroup.procs"
 }
 
 freeze_processes() {
-    local procs p c
+    local procs p c cg freeze_file
 
-    # fake-suspend and armada-powerd run as system services, outside user.slice.
-    if systemctl freeze user.slice; then
-        touch "$SAVE_DIR/user-slice"
-        log "froze user.slice"
-        return
+    # Freeze only gamescope/Steam's own cgroup, not the whole user.slice:
+    # pipewire/wireplumber live in a sibling cgroup (session.slice), and
+    # freezing them along with everything else for the sleep duration while
+    # the audio codec itself stays fully powered (fake-suspend never touches
+    # the hardware) is what desyncs pipewire's stream clocks from the
+    # hardware ring buffer, causing crackling/sped-up audio on resume
+    # (armada issue #31). Leaving them running (silently, muted) the whole
+    # time means there's nothing to resync in the first place.
+    cg="$(session_cgroup)"
+    if [[ -n "$cg" ]]; then
+        freeze_file="/sys/fs/cgroup${cg}/cgroup.freeze"
+        if [[ -w "$freeze_file" ]] && echo 1 > "$freeze_file" 2>/dev/null; then
+            echo "$cg" > "$SAVE_DIR/frozen-cgroup"
+            log "froze ${cg}"
+            return
+        fi
     fi
 
-    log "failed to freeze user.slice; falling back to process freezer"
+    log "failed to freeze session cgroup; falling back to process freezer"
     procs="$(session_procs_file)" || { log "no session cgroup; skipping freeze"; return; }
     [[ -r "$procs" ]] || { log "session procs unreadable; skipping freeze"; return; }
     : > "$SAVE_DIR/processes"
@@ -218,9 +261,10 @@ freeze_processes() {
     log "froze $(wc -l < "$SAVE_DIR/processes" 2>/dev/null || echo 0) processes"
 }
 unfreeze_processes() {
-    if [[ -f "$SAVE_DIR/user-slice" ]]; then
-        systemctl thaw user.slice || log "failed to thaw user.slice"
-        rm -f "$SAVE_DIR/user-slice"
+    if [[ -r "$SAVE_DIR/frozen-cgroup" ]]; then
+        local cg; cg="$(cat "$SAVE_DIR/frozen-cgroup")"
+        echo 0 > "/sys/fs/cgroup${cg}/cgroup.freeze" 2>/dev/null || log "failed to thaw ${cg}"
+        rm -f "$SAVE_DIR/frozen-cgroup"
         return
     fi
 

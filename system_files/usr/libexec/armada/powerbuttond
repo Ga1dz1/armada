@@ -8,9 +8,28 @@ STEAM_BIN="${STEAM_DIR}/steam"
 LONG_MS="${ARMADA_POWERBUTTON_LONG_MS:-1000}"
 POWER_DEVICE_WAIT_SEC="${ARMADA_POWERBUTTON_DEVICE_WAIT_SEC:-15}"
 PID_FILE="${ARMADA_POWERBUTTON_PID_FILE:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/armada-powerbuttond.pid}"
+# Real suspend (ARMADA_SUSPEND_MODE != fake) grabs the power key for a
+# couple seconds right after resume (see the 50-armada-real-suspend
+# systemd-sleep hook), which handles the common case: the same physical
+# press that wakes the kernel also lands here as an ordinary KEY_POWER
+# press+release once userspace thaws, and would otherwise read as a fresh
+# short-press and put the device straight back to sleep. This is a
+# backstop for the race where our own reader wakes up and sees that press
+# before the hook's grab lands - any press within this many ms of a
+# recorded resume is treated as wake noise, not a request.
+REBOUND_GUARD_MS="${ARMADA_POWERBUTTON_REBOUND_GUARD_MS:-2500}"
+RESUME_FLAG="/run/armada/real-suspend.resumed-at"
 
 log() { logger -t armada-powerbuttond -- "$*"; }
 source /usr/lib/armada/input-lib 2>/dev/null || true
+
+just_resumed() {
+    local at
+    [[ -r "$RESUME_FLAG" ]] || return 1
+    at="$(cat "$RESUME_FLAG" 2>/dev/null)" || return 1
+    [[ "$at" =~ ^[0-9]+$ ]] || return 1
+    (( ( $(date +%s%3N) - at ) < REBOUND_GUARD_MS ))
+}
 
 steam_uri() {
     [[ -x "$STEAM_BIN" ]] || return 0
@@ -152,6 +171,8 @@ powerbutton_main() {
                 esac
                 ;;
             draining)
+                # Long press already fired, or a rebound press is being
+                # swallowed (see just_resumed below) - ignore the release.
                 case "$line" in
                     *"(KEY_POWER), value 0"*) state=idle ;;
                 esac
@@ -162,6 +183,9 @@ powerbutton_main() {
                     *"(KEY_POWER), value 1"*)
                         if armada_lid_closed 2>/dev/null; then
                             log "power w/ lid closed -> ignored"
+                        elif just_resumed; then
+                            log "power press just after real-suspend resume -> rebound guard"
+                            state=draining
                         else
                             press_ms=$(date +%s%3N)
                             state=held
