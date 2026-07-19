@@ -57,6 +57,11 @@ The kernel/DTS side lives in
 fork of virtudude's own
 [armada-packages](https://github.com/virtudude/armada-packages).
 
+**Next up:** Retroid Pocket 5 and Retroid Pocket Flip 2 (both SM8250) - the
+GRUB menu and device-profile plumbing are already built to pick up any
+`sm8250-retroidpocket-*` device tree automatically, so bringing these up is
+mainly kernel/DTS + device-profile work, not new infrastructure.
+
 ## Supported devices
 
 | Device | SoC | Status |
@@ -75,6 +80,8 @@ fork of virtudude's own
 | AYANEO Pocket DMG | SM8550 | ✅ Tested |
 | AYANEO Pocket S 2K | SM8550 | ⚪ Untested |
 | Retroid Pocket Mini V2 | SM8250 | ✅ Tested |
+| Retroid Pocket 5 | SM8250 | 🚧 Work in progress |
+| Retroid Pocket Flip 2 | SM8250 | 🚧 Work in progress |
 
 ## Flash to SD card
 
