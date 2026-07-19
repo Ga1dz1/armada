@@ -51,19 +51,22 @@ display_on() {
 mute_audio()   { as_session wpctl set-mute @DEFAULT_AUDIO_SINK@ 1 2>/dev/null || true; }
 unmute_audio() { as_session wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 2>/dev/null || true; }
 
-# Multiple users (armada issue #31) report crackling/sped-up/warbling audio
-# after resume, sometimes for the rest of the session - likely a stale
-# pipewire clock/resampler state left over from freeze_processes pausing the
-# whole session (including pipewire/wireplumber) for the suspend duration
-# while the audio codec's own hardware clock isn't suspended in lockstep.
-# Tried restarting wireplumber/pipewire/pipewire-pulse on resume as a fix
-# (confirmed live: the restart itself runs successfully at the right time),
-# but that kills the running game/Steam's existing PipeWire client
-# connection, which doesn't reconnect on its own - confirmed live this
-# trades warbling audio for total silence, a worse outcome. Reverted; still
-# unresolved, needs a fix that resyncs the clock without dropping existing
-# client connections (e.g. bouncing just the ALSA device/sink, not the
-# whole server) rather than a full service restart.
+# Multiple users (armada issue #31) reported crackling/sped-up/warbling
+# audio after resume, sometimes for the rest of the session, and sometimes
+# outright silence in a client that had a stream open before sleeping (e.g.
+# Steam's own UI sounds) while freshly-opened streams (e.g. a game launched
+# after resume) were fine. Root cause: freeze_processes() used to freeze the
+# whole session, including pipewire/wireplumber themselves, for the sleep
+# duration - but the audio codec's hardware clock is never suspended in
+# lockstep (fake-suspend never touches the hardware), so pipewire's own
+# stream/clock bookkeeping went stale relative to the ring buffer by the
+# time it thawed. Restarting wireplumber/pipewire/pipewire-pulse on resume
+# was tried as a fix and confirmed to run at the right time, but that kills
+# existing client connections, which don't reconnect on their own - traded
+# warbling audio for total silence, a worse outcome. Fixed properly by
+# freeze_processes() no longer touching pipewire/wireplumber's cgroup at
+# all (see session_cgroup() - it only freezes gamescope/Steam's own cgroup),
+# so there's nothing to resync in the first place.
 
 radio_soft_blocked() {
     rfkill list "$1" 2>/dev/null | grep -q 'Soft blocked: yes'
@@ -210,26 +213,42 @@ wait_for_wake() {
 # Values are the 15-char /proc comm.
 SESSION_KEEP_COMMS='gamescope-wl|gamescope-sessi|Xwayland|mangoapp|steam_notif_dae'
 
-session_procs_file() {
+session_cgroup() {
     local gspid cg
     gspid="$(pgrep -f 'bin/gamescope -W' | head -1)"
     [[ -n "$gspid" ]] || return 1
     cg="$(awk -F: '/0::/{print $3}' "/proc/${gspid}/cgroup" 2>/dev/null)"
     [[ -n "$cg" ]] || return 1
+    echo "$cg"
+}
+
+session_procs_file() {
+    local cg; cg="$(session_cgroup)" || return 1
     echo "/sys/fs/cgroup${cg}/cgroup.procs"
 }
 
 freeze_processes() {
-    local procs p c
+    local procs p c cg freeze_file
 
-    # fake-suspend and armada-powerd run as system services, outside user.slice.
-    if systemctl freeze user.slice; then
-        touch "$SAVE_DIR/user-slice"
-        log "froze user.slice"
-        return
+    # Freeze only gamescope/Steam's own cgroup, not the whole user.slice:
+    # pipewire/wireplumber live in a sibling cgroup (session.slice), and
+    # freezing them along with everything else for the sleep duration while
+    # the audio codec itself stays fully powered (fake-suspend never touches
+    # the hardware) is what desyncs pipewire's stream clocks from the
+    # hardware ring buffer, causing crackling/sped-up audio on resume
+    # (armada issue #31). Leaving them running (silently, muted) the whole
+    # time means there's nothing to resync in the first place.
+    cg="$(session_cgroup)"
+    if [[ -n "$cg" ]]; then
+        freeze_file="/sys/fs/cgroup${cg}/cgroup.freeze"
+        if [[ -w "$freeze_file" ]] && echo 1 > "$freeze_file" 2>/dev/null; then
+            echo "$cg" > "$SAVE_DIR/frozen-cgroup"
+            log "froze ${cg}"
+            return
+        fi
     fi
 
-    log "failed to freeze user.slice; falling back to process freezer"
+    log "failed to freeze session cgroup; falling back to process freezer"
     procs="$(session_procs_file)" || { log "no session cgroup; skipping freeze"; return; }
     [[ -r "$procs" ]] || { log "session procs unreadable; skipping freeze"; return; }
     : > "$SAVE_DIR/processes"
@@ -242,9 +261,10 @@ freeze_processes() {
     log "froze $(wc -l < "$SAVE_DIR/processes" 2>/dev/null || echo 0) processes"
 }
 unfreeze_processes() {
-    if [[ -f "$SAVE_DIR/user-slice" ]]; then
-        systemctl thaw user.slice || log "failed to thaw user.slice"
-        rm -f "$SAVE_DIR/user-slice"
+    if [[ -r "$SAVE_DIR/frozen-cgroup" ]]; then
+        local cg; cg="$(cat "$SAVE_DIR/frozen-cgroup")"
+        echo 0 > "/sys/fs/cgroup${cg}/cgroup.freeze" 2>/dev/null || log "failed to thaw ${cg}"
+        rm -f "$SAVE_DIR/frozen-cgroup"
         return
     fi
 
