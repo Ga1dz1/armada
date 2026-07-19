@@ -112,7 +112,16 @@ def clamp_param(param, value):
 
 
 # --- reactive mode: raw gamepad evdev reader -------------------------------
-GAMEPAD_NAME = "Retroid Pocket Gamepad"
+# Raw gamepad MCU device name, checked against /sys/class/input/event*/device/name.
+# Devices sharing the HTR3212 stick RGB hardware use different gamepad
+# drivers/MCUs depending on family: Retroid Pocket Mini V2/5/Flip2 use the
+# "retroid-gamepad" driver (reports "Retroid Pocket Gamepad"); Retroid Pocket
+# 6 shares its InputPlumber composite device config with the AYN family and
+# uses the "rsinput" driver instead, reporting "AYN Odin2 Gamepad" even on
+# Retroid-branded hardware (confirmed on real Retroid Pocket 6 hardware) -
+# unverified whether AYN Odin 2/Mini/Portal/Thor report this same exact
+# string or their own variant.
+GAMEPAD_NAMES = ("Retroid Pocket Gamepad", "AYN Odin2 Gamepad")
 EV_KEY = 0x01
 EV_ABS = 0x03
 ABS_X, ABS_Y, ABS_RX, ABS_RY = 0x00, 0x01, 0x03, 0x04
@@ -167,7 +176,7 @@ def gamepad_device_path():
         return None
     for d in entries:
         try:
-            if (d / "device" / "name").read_text().strip() == GAMEPAD_NAME:
+            if (d / "device" / "name").read_text().strip() in GAMEPAD_NAMES:
                 return Path("/dev/input") / d.name
         except OSError:
             continue

@@ -66,10 +66,11 @@ fi
 # battery-reactive color (see stick-led-color and the armada-stick-led
 # service that keeps battery mode tracking the charge level). Retroid Pocket
 # 5 and Flip2 share the same LED zone layout in their device tree as Mini
-# V2 (unverified on real hardware, but the DTS nodes match), so they're
-# included here too.
+# V2 (unverified on real hardware, but the DTS nodes match). Retroid Pocket
+# 6 is confirmed on real hardware to have the identical /sys/class/leds/l:r1
+# etc. zone layout, despite being a different SoC (SM8550) and gamepad MCU.
 case "${ARMADA_DEVICE_ID:-}" in
-    retroid-pocket-mini-v2 | retroid-pocket-5 | retroid-pocket-flip2)
+    retroid-pocket-mini-v2 | retroid-pocket-5 | retroid-pocket-flip2 | retroid-pocket-6)
         /usr/libexec/armada/stick-led-color apply || true
         ;;
 esac
