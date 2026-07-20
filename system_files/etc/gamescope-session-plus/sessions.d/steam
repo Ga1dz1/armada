@@ -33,3 +33,94 @@ fi
 export STEAM_EXTRA_COMPAT_TOOLS_PATHS="/usr/share/steam/compatibilitytools.d:${HOME}/.local/share/Steam/compatibilitytools.d"
 
 CLIENTCMD='/usr/libexec/armada/launch-steam -gamepadui -steamos3 -steampal -steamdeck -noverifyfiles'
+
+# gamescope's direct-scanout optimization (flipping a fullscreen game's own
+# buffer straight to a hardware plane, bypassing gamescope's own composited
+# output entirely) is why ambilight's kmsgrab capture works in the Steam UI
+# but goes black once a game starts - kmsgrab grabs a fixed plane, and that
+# plane stops getting written to once direct scanout kicks in for the game.
+# --force-composition (confirmed present in gamescope's own --help/source)
+# disables that optimization so composited output - the thing kmsgrab
+# actually grabs - stays live no matter what's on screen. gamescope-session-
+# plus (/usr/share/gamescope-session-plus/gamescope-session-plus) has no
+# passthrough variable for a single extra flag like this - the only escape
+# hatch is setting GAMESCOPECMD ourselves, which skips its ENTIRE auto-build
+# block. So this reproduces that block's exact logic (same defaults, same
+# gamescope_has_option() feature-detection calls, same variables it already
+# reads from us) rather than hand-picking just what we currently use, so it
+# doesn't silently stop tracking upstream's own flag set if we start using
+# more of these variables later. Diff against gamescope-session-plus's own
+# script before touching this if gamescope-session-plus itself gets updated.
+: "${OUTPUT_CONNECTOR:=*,eDP-1}"
+: "${XWAYLAND_COUNT:=2}"
+: "${TOUCH_MODE:=4}"
+: "${HIDE_CURSOR_DELAY_MS:=3000}"
+: "${FADE_OUT_DURATION_MS:=200}"
+
+CURSOR=""
+[[ -f "${CURSOR_FILE:-}" ]] && CURSOR="--cursor ${CURSOR_FILE}"
+
+RESOLUTION=""
+[[ -n "${SCREEN_WIDTH:-}" && -n "${SCREEN_HEIGHT:-}" ]] && RESOLUTION="-W $SCREEN_WIDTH -H $SCREEN_HEIGHT"
+
+INTERNAL_RESOLUTION=""
+[[ -n "${INTERNAL_WIDTH:-}" && -n "${INTERNAL_HEIGHT:-}" ]] && INTERNAL_RESOLUTION="-w $INTERNAL_WIDTH -h $INTERNAL_HEIGHT"
+
+DRM_MODE_OPTION=""
+[[ -n "${DRM_MODE:-}" ]] && DRM_MODE_OPTION="--generate-drm-mode $DRM_MODE"
+
+ORIENTATION_OPTION=""
+[[ -n "${ORIENTATION:-}" ]] && ORIENTATION_OPTION="--force-orientation $ORIENTATION"
+
+ADAPTIVE_SYNC_OPTION=""
+[[ -n "${ADAPTIVE_SYNC:-}" ]] && ADAPTIVE_SYNC_OPTION="--adaptive-sync"
+
+PANEL_TYPE_OPTION=""
+[[ -n "${PANEL_TYPE:-}" ]] && gamescope_has_option "--force-panel-type" && PANEL_TYPE_OPTION="--force-panel-type $PANEL_TYPE"
+
+CUSTOM_REFRESH_RATES_OPTION=""
+[[ -n "${CUSTOM_REFRESH_RATES:-}" ]] && gamescope_has_option "--custom-refresh-rates" && CUSTOM_REFRESH_RATES_OPTION="--custom-refresh-rates $CUSTOM_REFRESH_RATES"
+
+USE_ROTATION_SHADER_OPTION=""
+[[ -n "${USE_ROTATION_SHADER:-}" ]] && gamescope_has_option "--use-rotation-shader" && USE_ROTATION_SHADER_OPTION="--use-rotation-shader"
+
+BACKEND_OPTION=""
+[[ -n "${BACKEND:-}" ]] && gamescope_has_option "--backend" && BACKEND_OPTION="--backend $BACKEND"
+
+MAX_SCALE_OPTION=""
+[[ -n "${MAX_SCALE:-}" ]] && gamescope_has_option "--max-scale" && MAX_SCALE_OPTION="--max-scale $MAX_SCALE"
+
+HDR_OPTIONS=""
+if [[ "${ENABLE_GAMESCOPE_HDR:-}" == "1" && "${ENABLE_GAMESCOPE_WSI:-}" == "1" ]] && gamescope_has_option "--hdr-enabled" && gamescope_has_option "--hdr-itm-enable"; then
+    HDR_OPTIONS="--hdr-enabled --hdr-itm-enable"
+    export ENABLE_HDR_WSI=1
+    export DXVK_HDR=1
+    export GAMESCOPE_WAYLAND_DISPLAY="gamescope-0"
+fi
+if [[ -n "${GAMESCOPE_HDR_NITS:-}" ]] && gamescope_has_option "--hdr-itm-sdr-nits" && gamescope_has_option "--hdr-sdr-content-nits"; then
+    HDR_OPTIONS="$HDR_OPTIONS --hdr-itm-sdr-nits $GAMESCOPE_HDR_NITS --hdr-sdr-content-nits $GAMESCOPE_HDR_NITS"
+fi
+
+FORCE_COMPOSITION_OPTION=""
+gamescope_has_option "--force-composition" && FORCE_COMPOSITION_OPTION="--force-composition"
+
+GAMESCOPECMD="$(get_gamescope_binary) \
+    $CURSOR \
+    $RESOLUTION \
+    $INTERNAL_RESOLUTION \
+    $ORIENTATION_OPTION \
+    $DRM_MODE_OPTION \
+    $ADAPTIVE_SYNC_OPTION \
+    $PANEL_TYPE_OPTION \
+    $CUSTOM_REFRESH_RATES_OPTION \
+    $USE_ROTATION_SHADER_OPTION \
+    $BACKEND_OPTION \
+    $HDR_OPTIONS \
+    $MAX_SCALE_OPTION \
+    $FORCE_COMPOSITION_OPTION \
+    --prefer-output $OUTPUT_CONNECTOR \
+    --xwayland-count $XWAYLAND_COUNT \
+    --default-touch-mode $TOUCH_MODE \
+    --hide-cursor-delay $HIDE_CURSOR_DELAY_MS \
+    --fade-out-duration $FADE_OUT_DURATION_MS \
+    --steam"
