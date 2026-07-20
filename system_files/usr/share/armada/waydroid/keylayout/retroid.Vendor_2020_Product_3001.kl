@@ -30,7 +30,9 @@ key 547   DPAD_RIGHT
 
 axis 0x00 X
 axis 0x01 Y
-axis 0x03 RX
-axis 0x04 RY
+# Android's right-stick convention is Z/RZ, not RX/RY (upstream 22186fb,
+# "Fix right stick in Waydroid" - confirmed the same bug existed here too).
+axis 0x03 Z
+axis 0x04 RZ
 axis 0x14 LTRIGGER
 axis 0x15 RTRIGGER
