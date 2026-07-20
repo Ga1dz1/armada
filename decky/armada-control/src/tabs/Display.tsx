@@ -4,13 +4,6 @@ import { getDisplayState, restartGamescopeSession, setDisplayConfig } from "../b
 import { SelectEdit } from "../components/widgets";
 import type { DisplayState } from "../types";
 
-const ORIENTATIONS = [
-  { data: "normal", label: "Normal" },
-  { data: "left", label: "Rotate Left" },
-  { data: "right", label: "Rotate Right" },
-  { data: "upsidedown", label: "Upside Down" },
-];
-
 // gamescope only ever drives one embedded output at a time (--prefer-output
 // picks the first available from a priority list at startup, there's no
 // live multi-monitor/hotplug re-pick) - so "primary display" here means
@@ -79,7 +72,10 @@ export function Display() {
       connector,
       width: previous?.width || w || 1920,
       height: previous?.height || h || 1080,
-      orientation: previous?.orientation || state.orientation || "normal",
+      // gamescope has no way to rotate a non-internal output (there's no
+      // Rotation control here for that reason) - orientation is meaningless
+      // for an external display, always "normal".
+      orientation: "normal",
     });
   };
 
@@ -95,13 +91,7 @@ export function Display() {
       {state.useExternal && (
         <>
           <SelectEdit label="Resolution" value={currentMode} options={modeOptions} onChange={selectMode} disabled={saving || activeDisconnected} />
-          <SelectEdit
-            label="Rotation"
-            value={state.orientation}
-            options={ORIENTATIONS}
-            onChange={(v) => persist({ orientation: v })}
-            disabled={saving || activeDisconnected}
-          />
+          <Field label="Rotation isn't available for an external display (gamescope only rotates the internal screen)." />
         </>
       )}
       {externals.length === 0 && (

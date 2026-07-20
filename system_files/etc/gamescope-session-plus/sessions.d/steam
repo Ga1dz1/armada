@@ -51,11 +51,17 @@ if [[ -f "$ARMADA_DISPLAY_OVERRIDE" ]]; then
             OUTPUT_CONNECTOR="${ARMADA_DISPLAY_CONNECTOR},${OUTPUT_CONNECTOR}"
             [[ -n "${ARMADA_DISPLAY_WIDTH:-}" ]] && SCREEN_WIDTH="$ARMADA_DISPLAY_WIDTH"
             [[ -n "${ARMADA_DISPLAY_HEIGHT:-}" ]] && SCREEN_HEIGHT="$ARMADA_DISPLAY_HEIGHT"
-            [[ -n "${ARMADA_DISPLAY_ORIENTATION:-}" ]] && ORIENTATION="$ARMADA_DISPLAY_ORIENTATION"
-            # Both are internal-panel-specific quirks (fixed physical mount
-            # rotation, fixed refresh list for that exact panel) - applying
-            # them to an external monitor as well would fight the rotation/
-            # refresh rate the player just picked for it.
+            # NOT settable per-output: gamescope's own --help is explicit
+            # that --force-orientation "rotate[s] the internal display" -
+            # confirmed live that letting a player pick a rotation for an
+            # external monitor here instead visibly rotated the internal
+            # panel, since that flag has no concept of "which output" at
+            # all. Force it (and the shader variant of the same thing) back
+            # to the internal panel's own unrotated state so an external
+            # display never has the internal panel's rotation fighting it -
+            # CUSTOM_REFRESH_RATES is still internal-panel-specific and
+            # dropped for the same reason as before.
+            ORIENTATION=normal
             USE_ROTATION_SHADER=0
             unset CUSTOM_REFRESH_RATES STEAM_DISPLAY_REFRESH_LIMITS
         fi
