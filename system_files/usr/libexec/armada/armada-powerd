@@ -189,6 +189,11 @@ class ArmadaPower:
         self.suspended = False
         self.suspend_save = {}
         self.connection = None
+        # None until the first power_source_tick() observes a real value -
+        # switching profile on that first observation (rather than only on
+        # a later change) would clobber whatever profile the user actually
+        # had before this daemon last restarted, right at startup.
+        self.ac_online = None
         self.load_config()
         self.profile = self.default_profile
         self.discover()
@@ -202,6 +207,8 @@ class ArmadaPower:
             self.set_gpu_manual_clock(self.manual_gpu_clock)
         self.fan_tick()
         GLib.timeout_add_seconds(3, self.fan_tick)
+        self.power_source_tick()
+        GLib.timeout_add_seconds(3, self.power_source_tick)
 
     def discover(self):
         self.gpu = self.discover_gpu()
@@ -244,6 +251,13 @@ class ArmadaPower:
         default_profile = parser.get("general", "default_profile").strip().lower()
         if default_profile not in PROFILES:
             raise ValueError(f"invalid default_profile: {default_profile}")
+        auto_profile = parser.getboolean("general", "auto_profile_by_power_source", fallback=True)
+        auto_profile_ac = parser.get("general", "auto_profile_ac", fallback="performance").strip().lower()
+        auto_profile_battery = parser.get("general", "auto_profile_battery", fallback="balanced").strip().lower()
+        if auto_profile_ac not in PROFILES:
+            auto_profile_ac = "performance"
+        if auto_profile_battery not in PROFILES:
+            auto_profile_battery = "balanced"
         for section in parser.sections():
             if not section.startswith("underclock."):
                 continue
@@ -337,7 +351,10 @@ class ArmadaPower:
             "fan_low_pwm": fan_low_pwm,
             "fan_safe_pwm": fan_safe_pwm,
         }
-        return default_profile, underclock_config, fan_curves, profile_config, fan_config, suspend_config
+        return (
+            default_profile, underclock_config, fan_curves, profile_config, fan_config, suspend_config,
+            auto_profile, auto_profile_ac, auto_profile_battery,
+        )
 
     def load_config(self):
         try:
@@ -352,6 +369,9 @@ class ArmadaPower:
             self.profile_config,
             self.fan_config,
             self.suspend_config,
+            self.auto_profile,
+            self.auto_profile_ac,
+            self.auto_profile_battery,
         ) = parsed
         self.profile_labels = {p: self.profile_config[p].get("label", p) for p in PROFILES}
 
@@ -691,6 +711,55 @@ class ArmadaPower:
             print(f"armada-powerd: fan tick failed: {exc}", file=sys.stderr)
             self.fan_safe()
             sd_notify("WATCHDOG=1")
+        return True
+
+    def power_source_online(self):
+        # Prefer an actual AC/USB/wireless power_supply node's own "online"
+        # attribute - the correct signal where it exists. Falls back to the
+        # battery's own "status" field (Charging/Full = plugged in,
+        # Discharging = not) for hardware that doesn't expose a separate
+        # supply node, same fallback stick-led-color's battery_rgb() uses
+        # for capacity/status.
+        try:
+            supplies = sorted(Path("/sys/class/power_supply").glob("*"))
+        except OSError:
+            return None
+        battery_status = None
+        for supply in supplies:
+            try:
+                kind = (supply / "type").read_text().strip()
+            except OSError:
+                continue
+            if kind != "Battery":
+                online = read_text(supply / "online")
+                if online.isdigit():
+                    return online != "0"
+                continue
+            battery_status = read_text(supply / "status").strip()
+        if battery_status in ("Charging", "Full"):
+            return True
+        if battery_status == "Discharging":
+            return False
+        return None
+
+    def power_source_tick(self):
+        try:
+            if not self.auto_profile:
+                return True
+            online = self.power_source_online()
+            if online is None:
+                return True
+            if self.ac_online is not None and online != self.ac_online:
+                target = self.auto_profile_ac if online else self.auto_profile_battery
+                if target != self.profile:
+                    self.profile = target
+                    self.apply_profile()
+                    self.save_state()
+                    if self.connection:
+                        self.emit_properties({"Profile": GLib.Variant("s", self.label_for(self.profile))})
+            self.ac_online = online
+        except Exception as exc:
+            print(f"armada-powerd: power source tick failed: {exc}", file=sys.stderr)
         return True
 
     def fan_safe(self):
