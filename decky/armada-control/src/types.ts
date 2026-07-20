@@ -110,6 +110,12 @@ export interface DisplayConnector {
   modes: string[];
 }
 
+export interface RememberedDisplay {
+  width: number;
+  height: number;
+  orientation: string;
+}
+
 export interface DisplayState {
   connectors: DisplayConnector[];
   primaryConnector: string;
@@ -118,6 +124,7 @@ export interface DisplayState {
   width: number;
   height: number;
   orientation: string;
+  remembered: Record<string, RememberedDisplay>;
 }
 
 export type Capture = Record<string, { center: number; min: number; max: number; range: number }>;

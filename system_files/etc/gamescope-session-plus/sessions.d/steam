@@ -26,6 +26,13 @@ fi
 # from a monitor that's since been unplugged must fall back to the internal
 # panel defaults already set above, not strand the session on a dead output.
 ARMADA_DISPLAY_OVERRIDE=/etc/armada/display-override.conf
+# Records which external connector this session actually launched on (not
+# merely which one is configured) - armada-display-hotplug restarts the
+# session back onto the internal panel only when THIS connector unplugs,
+# and the absence of the marker after that restart is what stops it from
+# restarting again in a loop.
+ARMADA_DISPLAY_MARKER="${XDG_RUNTIME_DIR:-/run/user/1000}/armada-display-connector"
+rm -f "$ARMADA_DISPLAY_MARKER"
 if [[ -f "$ARMADA_DISPLAY_OVERRIDE" ]]; then
     # shellcheck source=/dev/null
     source "$ARMADA_DISPLAY_OVERRIDE"
@@ -36,6 +43,7 @@ if [[ -f "$ARMADA_DISPLAY_OVERRIDE" ]]; then
             [[ "$(cat "$status_file" 2>/dev/null)" == "connected" ]] && display_connected=1
         done
         if (( display_connected )); then
+            printf '%s\n' "$ARMADA_DISPLAY_CONNECTOR" > "$ARMADA_DISPLAY_MARKER"
             # Listed first as a preference, not the only option: if the same
             # connector somehow vanishes between this check and gamescope's
             # own probe a moment later, it still falls back to the internal

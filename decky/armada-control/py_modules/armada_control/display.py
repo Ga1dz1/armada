@@ -7,6 +7,7 @@ def display_state():
     listing = call("list_displays")
     config = call("get_display_config")
     connectors = listing.get("connectors") or []
+    remembered = config.get("remembered")
     return {
         "connectors": connectors,
         "primaryConnector": listing.get("primaryConnector", ""),
@@ -15,6 +16,7 @@ def display_state():
         "width": config.get("width", 0),
         "height": config.get("height", 0),
         "orientation": config.get("orientation") or "normal",
+        "remembered": remembered if isinstance(remembered, dict) else {},
     }
 
 

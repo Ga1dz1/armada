@@ -20,6 +20,11 @@ CONFIG_PATHS = {
     "compat-applied": Path("/var/lib/armada/compat-applied.json"),
 }
 DISPLAY_OVERRIDE_PATH = Path("/etc/armada/display-override.conf")
+# Per-connector last-used settings, kept even after switching back to the
+# internal screen so re-picking the same monitor restores its resolution/
+# rotation instead of resetting to the first mode. /var/lib (not /etc):
+# it's accumulated state, not the active choice.
+DISPLAY_REMEMBERED_PATH = Path("/var/lib/armada/display-remembered.json")
 DISPLAY_ORIENTATIONS = {"normal", "left", "right", "upsidedown"}
 CALIBRATION_PARAMS = (
     "axis_leftx_min",
@@ -138,9 +143,18 @@ def action_list_displays(request):
     return {"connectors": connectors, "primaryConnector": primary}
 
 
+def _display_remembered():
+    try:
+        data = json.loads(DISPLAY_REMEMBERED_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def action_get_display_config(request):
+    remembered = _display_remembered()
     if not DISPLAY_OVERRIDE_PATH.exists():
-        return {"useExternal": False}
+        return {"useExternal": False, "remembered": remembered}
     values = {}
     try:
         for line in DISPLAY_OVERRIDE_PATH.read_text(encoding="utf-8").splitlines():
@@ -148,18 +162,21 @@ def action_get_display_config(request):
                 key, value = line.split("=", 1)
                 values[key] = value
     except OSError:
-        return {"useExternal": False}
+        return {"useExternal": False, "remembered": remembered}
     return {
         "useExternal": True,
         "connector": values.get("ARMADA_DISPLAY_CONNECTOR", ""),
         "width": int(values.get("ARMADA_DISPLAY_WIDTH") or 0),
         "height": int(values.get("ARMADA_DISPLAY_HEIGHT") or 0),
         "orientation": values.get("ARMADA_DISPLAY_ORIENTATION", "normal"),
+        "remembered": remembered,
     }
 
 
 def action_set_display_config(request):
     if not bool(request.get("useExternal")):
+        # Only the active choice is cleared - the remembered per-connector
+        # settings survive so picking the same monitor later restores them.
         try:
             DISPLAY_OVERRIDE_PATH.unlink()
         except FileNotFoundError:
@@ -187,6 +204,9 @@ def action_set_display_config(request):
         f"ARMADA_DISPLAY_ORIENTATION={orientation}\n"
     )
     atomic_write(DISPLAY_OVERRIDE_PATH, text)
+    remembered = _display_remembered()
+    remembered[connector] = {"width": width, "height": height, "orientation": orientation}
+    atomic_write(DISPLAY_REMEMBERED_PATH, json.dumps(remembered, separators=(",", ":")))
     return {"ok": True}
 
 

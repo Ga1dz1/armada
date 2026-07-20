@@ -48,6 +48,9 @@ export function Display() {
     })),
   ];
   const activeExternal = externals.find((c) => c.connector === state.connector);
+  // A disconnected display has nothing meaningful to configure right now -
+  // its remembered settings come back when it's plugged in again.
+  const activeDisconnected = state.useExternal && (!activeExternal || !activeExternal.connected);
   const currentMode = `${state.width}x${state.height}`;
   const modeChoices = activeExternal?.modes.length ? activeExternal.modes : [currentMode];
   const modeOptions = modeChoices.map((mode) => ({ data: mode, label: mode }));
@@ -67,13 +70,14 @@ export function Display() {
       return;
     }
     const target = externals.find((c) => c.connector === connector);
+    const previous = state.remembered[connector];
     const [w, h] = (target?.modes[0] || "1920x1080").split("x").map(Number);
     persist({
       useExternal: true,
       connector,
-      width: w || 1920,
-      height: h || 1080,
-      orientation: state.orientation || "normal",
+      width: previous?.width || w || 1920,
+      height: previous?.height || h || 1080,
+      orientation: previous?.orientation || state.orientation || "normal",
     });
   };
 
@@ -88,21 +92,21 @@ export function Display() {
       <SelectEdit label="Primary Display" value={selectedConnector} options={primaryOptions} onChange={selectPrimary} disabled={saving} />
       {state.useExternal && (
         <>
-          <SelectEdit label="Resolution" value={currentMode} options={modeOptions} onChange={selectMode} disabled={saving} />
+          <SelectEdit label="Resolution" value={currentMode} options={modeOptions} onChange={selectMode} disabled={saving || activeDisconnected} />
           <SelectEdit
             label="Rotation"
             value={state.orientation}
             options={ORIENTATIONS}
             onChange={(v) => persist({ orientation: v })}
-            disabled={saving}
+            disabled={saving || activeDisconnected}
           />
         </>
       )}
       {externals.length === 0 && (
         <Field label="No external display detected. Connect one (dock/USB-C/HDMI) to choose it here." />
       )}
-      {state.useExternal && activeExternal && !activeExternal.connected && (
-        <Field label="This display isn't connected right now - game mode will fall back to the internal screen until it is." />
+      {activeDisconnected && (
+        <Field label="This display isn't connected right now - game mode runs on the internal screen until it's plugged back in. Its settings are remembered." />
       )}
       <div className="armada-reset-row">
         <ButtonItem
