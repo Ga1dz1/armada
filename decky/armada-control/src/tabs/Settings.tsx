@@ -150,19 +150,39 @@ export function Settings({ config, setConfig }: {
   const [flashExpanded, setFlashExpanded] = useState(false);
   const [flashButton, setFlashButton] = useState("south");
   const [selectedSide, setSelectedSide] = useState<"l" | "r">("l");
+  const [separate, setSeparate] = useState(false);
   const stickLed = config.stickLed;
   const sideState = stickLed?.sides?.[selectedSide];
   const mode = sideState?.mode || "static";
+  // When not "separate", every stick-lighting action targets both sticks at
+  // once (mirrored) so the panel behaves like a single combined control -
+  // the simpler default most people expect. Ticking "separate" scopes
+  // everything below to just the selected stick, matching the underlying
+  // backend state, which is always independent per stick regardless of
+  // this toggle.
+  const targetSides: ("l" | "r")[] = separate ? [selectedSide] : ["l", "r"];
 
   const setStickLedMode = async (nextMode: string) => {
     if (!stickLed) return;
-    const previous = mode;
-    setConfig((current) => (current ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { mode: nextMode }) } : current));
+    const sides = targetSides;
+    const previous = sides.map((s) => stickLed.sides[s].mode);
+    setConfig((current) => {
+      if (!current) return current;
+      let sl = current.stickLed;
+      for (const s of sides) sl = patchSide(sl, s, { mode: nextMode });
+      return { ...current, stickLed: sl };
+    });
     try {
-      const applied = await applyStickLedMode(selectedSide, nextMode);
+      let applied = stickLed;
+      for (const s of sides) applied = await applyStickLedMode(s, nextMode);
       setConfig((current) => (current ? { ...current, stickLed: applied } : current));
     } catch (error) {
-      setConfig((current) => (current ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { mode: previous }) } : current));
+      setConfig((current) => {
+        if (!current) return current;
+        let sl = current.stickLed;
+        sides.forEach((s, i) => { sl = patchSide(sl, s, { mode: previous[i] }); });
+        return { ...current, stickLed: sl };
+      });
     }
   };
   const setStickLedScreenLink = async (value: boolean) => {
@@ -178,15 +198,25 @@ export function Settings({ config, setConfig }: {
   };
   const setStickLedColor = async (hex: string) => {
     if (!stickLed || !sideState) return;
-    const previous = sideState.color;
-    setConfig((current) =>
-      current ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { mode: "static", color: hex }) } : current,
-    );
+    const sides = targetSides;
+    const previous = sides.map((s) => stickLed.sides[s].color);
+    setConfig((current) => {
+      if (!current) return current;
+      let sl = current.stickLed;
+      for (const s of sides) sl = patchSide(sl, s, { mode: "static", color: hex });
+      return { ...current, stickLed: sl };
+    });
     try {
-      const applied = await applyStickLedColor(selectedSide, hex);
+      let applied = stickLed;
+      for (const s of sides) applied = await applyStickLedColor(s, hex);
       setConfig((current) => (current ? { ...current, stickLed: applied } : current));
     } catch (error) {
-      setConfig((current) => (current ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { color: previous }) } : current));
+      setConfig((current) => {
+        if (!current) return current;
+        let sl = current.stickLed;
+        sides.forEach((s, i) => { sl = patchSide(sl, s, { color: previous[i] }); });
+        return { ...current, stickLed: sl };
+      });
     }
   };
   const setStickLedChannel = (channel: 0 | 1 | 2, value: number) => {
@@ -224,33 +254,49 @@ export function Settings({ config, setConfig }: {
     if (!stickLed || !sideState) return;
     const effectiveMode = aliasMode(mode);
     const key = `${param}_${effectiveMode}`;
-    const previous = sideState.params[key];
-    setConfig((current) =>
-      current
-        ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { params: { ...current.stickLed.sides[selectedSide].params, [key]: backendValue } }) }
-        : current,
-    );
+    const sides = targetSides;
+    const previous = sides.map((s) => stickLed.sides[s].params[key]);
+    setConfig((current) => {
+      if (!current) return current;
+      let sl = current.stickLed;
+      for (const s of sides) sl = patchSide(sl, s, { params: { ...sl.sides[s].params, [key]: backendValue } });
+      return { ...current, stickLed: sl };
+    });
     try {
-      const applied = await applyStickLedParam(selectedSide, param, effectiveMode, backendValue);
+      let applied = stickLed;
+      for (const s of sides) applied = await applyStickLedParam(s, param, effectiveMode, backendValue);
       setConfig((current) => (current ? { ...current, stickLed: applied } : current));
     } catch (error) {
-      setConfig((current) =>
-        current
-          ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { params: { ...current.stickLed.sides[selectedSide].params, [key]: previous } }) }
-          : current,
-      );
+      setConfig((current) => {
+        if (!current) return current;
+        let sl = current.stickLed;
+        sides.forEach((s, i) => { sl = patchSide(sl, s, { params: { ...sl.sides[s].params, [key]: previous[i] } }); });
+        return { ...current, stickLed: sl };
+      });
     }
   };
   const setStickLedDuotoneColor = async (slot: "a" | "b", hex: string) => {
     if (!stickLed || !sideState) return;
     const field = slot === "a" ? "duotoneColorA" : "duotoneColorB";
-    const previous = sideState[field];
-    setConfig((current) => (current ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { [field]: hex }) } : current));
+    const sides = targetSides;
+    const previous = sides.map((s) => stickLed.sides[s][field]);
+    setConfig((current) => {
+      if (!current) return current;
+      let sl = current.stickLed;
+      for (const s of sides) sl = patchSide(sl, s, { [field]: hex });
+      return { ...current, stickLed: sl };
+    });
     try {
-      const applied = await applyStickLedDuotoneColor(selectedSide, slot, hex);
+      let applied = stickLed;
+      for (const s of sides) applied = await applyStickLedDuotoneColor(s, slot, hex);
       setConfig((current) => (current ? { ...current, stickLed: applied } : current));
     } catch (error) {
-      setConfig((current) => (current ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { [field]: previous }) } : current));
+      setConfig((current) => {
+        if (!current) return current;
+        let sl = current.stickLed;
+        sides.forEach((s, i) => { sl = patchSide(sl, s, { [field]: previous[i] }); });
+        return { ...current, stickLed: sl };
+      });
     }
   };
   const setDuotoneChannel = (slot: "a" | "b", channel: 0 | 1 | 2, value: number) => {
@@ -261,17 +307,25 @@ export function Settings({ config, setConfig }: {
   };
   const setStickLedDuotoneOrientation = async (orientation: string) => {
     if (!stickLed || !sideState) return;
-    const previous = sideState.duotoneOrientation;
-    setConfig((current) =>
-      current ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { duotoneOrientation: orientation }) } : current,
-    );
+    const sides = targetSides;
+    const previous = sides.map((s) => stickLed.sides[s].duotoneOrientation);
+    setConfig((current) => {
+      if (!current) return current;
+      let sl = current.stickLed;
+      for (const s of sides) sl = patchSide(sl, s, { duotoneOrientation: orientation });
+      return { ...current, stickLed: sl };
+    });
     try {
-      const applied = await applyStickLedDuotoneOrientation(selectedSide, orientation);
+      let applied = stickLed;
+      for (const s of sides) applied = await applyStickLedDuotoneOrientation(s, orientation);
       setConfig((current) => (current ? { ...current, stickLed: applied } : current));
     } catch (error) {
-      setConfig((current) =>
-        current ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { duotoneOrientation: previous }) } : current,
-      );
+      setConfig((current) => {
+        if (!current) return current;
+        let sl = current.stickLed;
+        sides.forEach((s, i) => { sl = patchSide(sl, s, { duotoneOrientation: previous[i] }); });
+        return { ...current, stickLed: sl };
+      });
     }
   };
   return (
@@ -287,7 +341,15 @@ export function Settings({ config, setConfig }: {
       </PanelSection>
       {stickLed?.supported && sideState && (
         <PanelSection title="Stick Lighting">
-          <SelectEdit label="Stick" value={selectedSide} options={SIDE_OPTIONS} onChange={(value) => setSelectedSide(value as "l" | "r")} />
+          <ToggleRow
+            label="Configure each stick separately"
+            description="Off: changes below apply to both sticks at once. On: pick a stick and edit just that one."
+            value={separate}
+            onChange={setSeparate}
+          />
+          {separate && (
+            <SelectEdit label="Stick" value={selectedSide} options={SIDE_OPTIONS} onChange={(value) => setSelectedSide(value as "l" | "r")} />
+          )}
           <SelectEdit label="Mode" value={mode} options={MODE_OPTIONS} onChange={setStickLedMode} />
           {Object.entries(PARAM_UI)
             .filter(([, spec]) => spec.modes.has(aliasMode(mode)))
