@@ -45,14 +45,24 @@ armada_staged_ref() {
 # Channel the user selected, validated to a known channel; else $1 (a caller-
 # supplied booted channel, to avoid re-querying) or the booted channel.
 armada_desired_channel() {
-    local c="" ch
+    local c="" ch b
     [[ -r "$ARMADA_CHANNEL_STATE" ]] && read -r c < "$ARMADA_CHANNEL_STATE" 2>/dev/null
     # Exact-match a known channel (a substring/glob test would accept a corrupt
     # multi-word value and feed it to bootc as a tag).
     for ch in ${ARMADA_CHANNELS}; do
         [[ "$c" == "$ch" ]] && { echo "$c"; return; }
     done
-    if [[ -n "${1:-}" ]]; then echo "$1"; else armada_booted_channel; fi
+    b="${1:-$(armada_booted_channel)}"
+    for ch in ${ARMADA_CHANNELS}; do
+        [[ "$b" == "$ch" ]] && { echo "$b"; return; }
+    done
+    # A locally-built/flashed image's tag ("latest", or empty) names no
+    # channel; parroting it back made armada-update try `bootc switch` to a
+    # tag that doesn't exist on the registry, fail, and give up - so devices
+    # flashed from a release SD image never adopted the OTA channel at all.
+    # Default them to testing: the first Steam update check switches to the
+    # signed ghcr ref and every later update is a plain upgrade.
+    echo testing
 }
 
 # Run a bootc command with progress wired to the Steam N% translator. fd 3 must
