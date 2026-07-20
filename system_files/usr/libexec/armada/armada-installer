@@ -498,6 +498,86 @@ fdtdir ${bootdir}/dtb
 EOF
 }
 
+stage_sm8250_grub() {
+    local running_entry running_dtb new_entry linux initrd options fdtdir dtb_rel grub_dir
+
+    eval "$(/usr/libexec/armada/device-env 2>/dev/null)" || true
+    [[ "${ARMADA_SOC_CLASS:-}" == SM8250 ]] || return 0
+
+    # SM8250's ABL has no working per-device DTB auto-pick (see
+    # finalize-armada-image.sh's fdtdir-detection comment) - an explicit GRUB
+    # devicetree line is the only way this family boots the right hardware,
+    # and unlike the SD card image, nothing stages GRUB for an internal
+    # install at all otherwise. Reuse whichever DTB the running system
+    # (booted from the SD card, already pinned by that same fix) resolved to,
+    # rather than re-deriving a device->DTB mapping a second time here.
+    running_entry=$(armada_default_bls_entry /boot)
+    [[ -n $running_entry ]] || { echo "ERROR: could not find the running BLS entry; cannot stage GRUB for internal boot" >&2; exit 1; }
+    running_dtb=$(sed -n 's|^devicetree .*/||p' "$running_entry")
+    [[ -n $running_dtb ]] || { echo "ERROR: running BLS entry has no pinned devicetree; cannot stage GRUB for internal boot" >&2; exit 1; }
+
+    new_entry=$(armada_default_bls_entry "$TARGET/boot")
+    linux=$(sed -n 's/^linux //p' "$new_entry" | head -1)
+    initrd=$(sed -n 's/^initrd //p' "$new_entry" | head -1)
+    options=$(sed -n 's/^options //p' "$new_entry" | head -1)
+    fdtdir=$(sed -n 's/^fdtdir //p' "$new_entry" | head -1)
+    [[ -n $linux && -n $initrd && -n $options && -n $fdtdir ]] \
+        || { echo "ERROR: could not parse the new BLS entry for GRUB staging" >&2; exit 1; }
+
+    # rewrite_bls wrote these /boot-prefixed (armada-bootimg-update needs a
+    # full sysroot path); GRUB instead roots directly on the BOOT partition
+    # by UUID below, so the same paths are used here without that prefix -
+    # matching finalize-armada-image.sh's own (unprefixed) convention.
+    linux=${linux#/boot}
+    initrd=${initrd#/boot}
+    fdtdir=${fdtdir#/boot}
+    # Kernel packaging always installs SM8250 DTBs under a "qcom" vendor
+    # subdirectory of fdtdir (see finalize-armada-image.sh's own
+    # ${FDTDIR}/qcom/${base}.dtb) - fixed by the kernel package layout, not
+    # per-device, so it's the same on the running system and this new install.
+    dtb_rel="${fdtdir}/qcom/${running_dtb}"
+    [[ -f "$TARGET/boot${dtb_rel}" ]] || { echo "ERROR: ${dtb_rel} missing from the new install; cannot stage GRUB for internal boot" >&2; exit 1; }
+
+    grub_dir="$TARGET/boot/efi/boot/grub"
+    install -Dpm 0644 /usr/share/armada/grub/bootaa64.efi "$TARGET/boot/efi/EFI/BOOT/BOOTAA64.EFI"
+    install -d -m 0755 "$grub_dir"
+    install -m 0644 /usr/share/armada/grub/dejavu-mono.pf2 "$grub_dir/dejavu-mono.pf2"
+
+    {
+        echo "insmod part_gpt"
+        echo "insmod part_msdos"
+        echo "insmod fat"
+        echo "insmod ext2"
+        echo
+        echo "set lang=en_US"
+        echo "loadfont /boot/grub/dejavu-mono.pf2"
+        # Matches ROCKNIX's own value for this panel/mounting family
+        # (RP5/Flip2/Mini/Mini V2) - live-tested correct on Mini V2.
+        echo "set rotation=270"
+        echo "set gfxmode=auto"
+        echo "insmod efi_gop"
+        echo "insmod gfxterm"
+        echo "terminal_output gfxterm"
+        echo
+        echo "search --fs-uuid --set root --no-floppy ${BOOT_UUID}"
+        echo
+        # A brief visible menu (not hidden) rather than an instant autoboot:
+        # only one entry exists here, so nothing to choose, but a device that
+        # boots into a blank screen with no diagnostic is exactly the "did
+        # neither EFI nor GRUB load" failure mode this whole function exists
+        # to fix - a few seconds of visible GRUB output at least confirms
+        # this stage is reached if something further along still fails.
+        echo "set timeout_style=menu"
+        echo "set timeout=3"
+        echo
+        printf "menuentry 'Armada' {\n"
+        printf "    linux %s %s\n" "$linux" "$options"
+        printf "    initrd %s\n" "$initrd"
+        printf "    devicetree %s\n" "$dtb_rel"
+        printf "}\n"
+    } > "$grub_dir/grub.cfg"
+}
+
 format_root() {
     local tmp
     mkfs.btrfs -f -L root "$ROOT_PART" >/dev/null
@@ -571,6 +651,7 @@ deploy_to_internal() {
     set_origin
     rewrite_bls
     seed_kernel
+    stage_sm8250_grub
     sync
 }
 
