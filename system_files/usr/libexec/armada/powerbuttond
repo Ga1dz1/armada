@@ -23,14 +23,23 @@ power_device() {
     return 1
 }
 
-# Lid (clamshell only): close -> Steam sleep. Lid-open wake is fake-suspend's job.
+# Lid (clamshell only): close -> suspend directly. Lid-open wake is
+# fake-suspend's job. This used to go through steam_uri shortpowerpress like
+# the power button does, but that's wrong for a lid: -ifrunning is a no-op
+# if Steam isn't running, and even when it is, shortpowerpress in desktop
+# mode surfaces a confirmation menu instead of sleeping immediately - nobody
+# can click a menu after they've already closed the lid and put the device
+# in a bag. systemctl suspend is unconditional and session-agnostic (our own
+# 10-armada-suspend.conf drop-in routes it through suspend-dispatch to
+# fake-suspend or real suspend regardless of desktop/game mode), matching
+# how every laptop's lid-close is expected to behave.
 lidpid=""
 liddev="$(armada_find_lid_dev || true)"
 if [[ -n "$liddev" ]]; then
     log "watching lid $liddev"
     ( evtest "$liddev" 2>/dev/null | while read -r l; do
         case "$l" in
-            *"(SW_LID), value 1"*) log "lid close -> shortpowerpress"; steam_uri shortpowerpress ;;
+            *"(SW_LID), value 1"*) log "lid close -> systemctl suspend"; systemctl suspend --no-block ;;
         esac
       done ) &
     lidpid=$!
