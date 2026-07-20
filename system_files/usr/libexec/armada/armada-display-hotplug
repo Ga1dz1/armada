@@ -38,6 +38,10 @@ if ! pgrep -x gamescope >/dev/null 2>&1; then
 fi
 
 rm -f "$MARKER"
-# Detached: udev kills long-running RUN+= children, and an sddm restart
-# tearing down this very trigger context mid-flight is exactly that case.
-systemd-run --no-block /usr/libexec/armada/session-control switch-gamemode
+# Detached: udev kills long-running RUN+= children, and this restart
+# tearing down the very cgroup this trigger is running in mid-flight is
+# exactly that case. Not session-control's switch-gamemode: confirmed live
+# that restarting sddm.service (what that goes through when there's no
+# Plasma session to gracefully hand off from) never tears down an already-
+# running autologin session at all - see restart-gamescope-session for why.
+systemd-run --no-block /usr/libexec/armada/restart-gamescope-session
