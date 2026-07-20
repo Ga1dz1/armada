@@ -42,6 +42,18 @@ if [[ -f "$ARMADA_DISPLAY_OVERRIDE" ]]; then
             [[ -f "$status_file" ]] || continue
             [[ "$(cat "$status_file" 2>/dev/null)" == "connected" ]] && display_connected=1
         done
+        # A portrait (width < height) choice can only come from a stale/
+        # hand-edited override - the Decky UI itself refuses to save one,
+        # since gamescope can't rotate an external output to compensate
+        # (confirmed live on the official Retroid Screen Add-on: its only
+        # EDID mode is 1080x1920). Trusting it here would silently strand
+        # game mode sideways with no way to fix it except SSH, so it's
+        # treated the same as "not connected" - fall back to internal.
+        if (( display_connected )) \
+            && [[ -n "${ARMADA_DISPLAY_WIDTH:-}" && -n "${ARMADA_DISPLAY_HEIGHT:-}" ]] \
+            && (( ARMADA_DISPLAY_WIDTH < ARMADA_DISPLAY_HEIGHT )); then
+            display_connected=0
+        fi
         if (( display_connected )); then
             printf '%s\n' "$ARMADA_DISPLAY_CONNECTOR" > "$ARMADA_DISPLAY_MARKER"
             # Listed first as a preference, not the only option: if the same
@@ -51,14 +63,15 @@ if [[ -f "$ARMADA_DISPLAY_OVERRIDE" ]]; then
             OUTPUT_CONNECTOR="${ARMADA_DISPLAY_CONNECTOR},${OUTPUT_CONNECTOR}"
             [[ -n "${ARMADA_DISPLAY_WIDTH:-}" ]] && SCREEN_WIDTH="$ARMADA_DISPLAY_WIDTH"
             [[ -n "${ARMADA_DISPLAY_HEIGHT:-}" ]] && SCREEN_HEIGHT="$ARMADA_DISPLAY_HEIGHT"
-            # NOT settable per-output: gamescope's own --help is explicit
-            # that --force-orientation "rotate[s] the internal display" -
-            # confirmed live that letting a player pick a rotation for an
-            # external monitor here instead visibly rotated the internal
-            # panel, since that flag has no concept of "which output" at
-            # all. Force it (and the shader variant of the same thing) back
-            # to the internal panel's own unrotated state so an external
-            # display never has the internal panel's rotation fighting it -
+            # NOT settable per-output: confirmed live (not just from
+            # gamescope's own --help, which says --force-orientation
+            # "rotate[s] the internal display") - made an external output
+            # the genuinely active one (internal disabled) and the flag
+            # still had zero visible effect on it in either direction. It
+            # only ever affects the internal panel regardless of what
+            # gamescope is actually driving, so force it (and the shader
+            # variant of the same thing) back to the internal panel's own
+            # unrotated state whenever an external display is primary -
             # CUSTOM_REFRESH_RATES is still internal-panel-specific and
             # dropped for the same reason as before.
             ORIENTATION=normal
