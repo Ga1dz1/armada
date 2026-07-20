@@ -28,6 +28,13 @@
 #    staying asleep indefinitely. Configurable, off by default.
 #  - wifi reconnection reliability: see suspend_radios()/resume_radios()
 #    below for why the radio is explicitly blocked/unblocked around sleep.
+#  - per-cycle wake diagnostics under /var/log/armada-suspend/ (latest.log is
+#    always the most recent cycle): community reports of an inconsistent
+#    ("every other time") wake on SM8250 couldn't be root-caused without a
+#    live failing device to catch in the act, so every cycle now records the
+#    kernel log across the freeze/thaw window, the last IRQ that woke the
+#    kernel, and whether the power key's own IRQ count moved - enough to
+#    diagnose the NEXT failure from the log alone.
 set -uo pipefail
 
 [[ "${2:-}" == "suspend" ]] || exit 0
@@ -115,16 +122,49 @@ resume_radios() {
 
 SAVE_DIR="/run/armada/real-suspend"
 
+# Community reports of an inconsistent ("every other time") wake failure on
+# SM8250 - the first default rollout of real suspend for this SoC - couldn't
+# be root-caused without either a live device or evidence from the failure
+# itself. This captures exactly that evidence on every cycle so the NEXT
+# failure is diagnosable after the fact (report the log, no live repro
+# needed): the kernel log across the freeze/thaw window (via journalctl, not
+# dmesg - the ring buffer wraps and loses the boundary on a chatty system),
+# which wakeup IRQ actually fired, and whether the power key's own IRQ count
+# moved at all (distinguishes "kernel never saw the press" from "kernel woke
+# fine but something later in resume hung"). Capped to the last 20 cycles so
+# it can't grow unbounded on a device that's suspended thousands of times.
+DIAG_DIR="/var/log/armada-suspend"
+DIAG_LOG_PATH_FLAG="$SAVE_DIR/diag-log"
+
+pwrkey_irq_count() {
+    # gpio-keys/pon_pwrkey show up under different names across kernels; grab
+    # every /proc/interrupts line whose action mentions the key so a rename
+    # doesn't silently blank this out.
+    grep -i "pwrkey\|pwr_key\|power.button\|key_power" /proc/interrupts 2>/dev/null
+}
+
 case "$1" in
     pre)
         as_session wpctl set-mute @DEFAULT_AUDIO_SINK@ 1 2>/dev/null || true
-        mkdir -p /run/armada "$SAVE_DIR"
+        mkdir -p /run/armada "$SAVE_DIR" "$DIAG_DIR"
         touch "$STICK_LED_FLAG"
         # Give the stick-led daemon (polls every 0.5s) a full cycle to blank
         # the LEDs before the kernel's own freeze_processes() takes it too.
         sleep 0.6
         suspend_radios
         arm_watchdog
+
+        ls -1t "$DIAG_DIR"/cycle-*.log 2>/dev/null | tail -n +20 | xargs -r rm -f
+        diag_log="$DIAG_DIR/cycle-$(date -u +%Y%m%dT%H%M%SZ).log"
+        pre_ts="$(date -Is)"
+        printf '%s\n%s\n' "$diag_log" "$pre_ts" > "$DIAG_LOG_PATH_FLAG"
+        {
+            echo "=== pre-suspend ${pre_ts} ==="
+            echo "-- power-key IRQ count before --"
+            pwrkey_irq_count
+        } > "$diag_log" 2>&1
+        ln -sf "$(basename "$diag_log")" "$DIAG_DIR/latest.log"
+
         log "pre-suspend done"
         ;;
     post)
@@ -146,6 +186,25 @@ case "$1" in
             timeout 2 evtest --grab "$pdev" >/dev/null 2>&1
         fi
         date +%s%3N > "$RESUME_FLAG" 2>/dev/null || true
+
+        if [[ -r "$DIAG_LOG_PATH_FLAG" ]]; then
+            { read -r diag_log; read -r pre_ts; } < "$DIAG_LOG_PATH_FLAG"
+            if [[ -n "${diag_log:-}" ]]; then
+                {
+                    echo "=== post-resume $(date -Is) ==="
+                    echo "-- power-key IRQ count after --"
+                    pwrkey_irq_count
+                    echo "-- last wakeup IRQ the kernel recorded --"
+                    cat /sys/power/pm_wakeup_irq 2>/dev/null || echo "(not exposed by this kernel)"
+                    echo "-- active wakeup sources --"
+                    cat /sys/kernel/debug/wakeup_sources 2>/dev/null || echo "(debugfs not mounted)"
+                    echo "-- kernel log across the freeze/thaw window --"
+                    journalctl -k --no-pager --since "${pre_ts:-1 hour ago}" 2>/dev/null \
+                        || echo "(journalctl unavailable)"
+                } >> "$diag_log" 2>&1
+            fi
+        fi
+
         resume_radios
         rm -rf "$SAVE_DIR"
         as_session wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 2>/dev/null || true
