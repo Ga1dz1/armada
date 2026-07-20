@@ -1,19 +1,30 @@
 #!/bin/bash
-# Regenerate /KERNEL after OSTree finalizes a staged deployment, rolling back
-# the BLS default on failure while preserving the updater's failure status.
+# Regenerate /KERNEL, and on SM8250 the staged GRUB config, after OSTree
+# finalizes a staged deployment - rolling back the BLS default if either
+# fails, while preserving the first failure's status. Both are no-ops
+# (exit 0) on a device/build they don't apply to.
 set -uo pipefail
 
-if /usr/libexec/armada/armada-bootimg-update; then
-    exit 0
-else
-    update_status=$?
+status=0
+
+if ! /usr/libexec/armada/armada-bootimg-update; then
+    status=$?
+    echo "armada-bootimg-finalize: boot image update failed (${status})" >&2
 fi
 
-echo "armada-bootimg-finalize: boot image update failed (${update_status}); rolling back deployment" >&2
+if ! /usr/libexec/armada/armada-grub-update; then
+    grub_status=$?
+    echo "armada-bootimg-finalize: GRUB update failed (${grub_status})" >&2
+    (( status == 0 )) && status=$grub_status
+fi
+
+(( status == 0 )) && exit 0
+
+echo "armada-bootimg-finalize: rolling back deployment" >&2
 if /usr/bin/bootc rollback; then
     echo "armada-bootimg-finalize: deployment rollback succeeded" >&2
 else
     rollback_status=$?
     echo "armada-bootimg-finalize: deployment rollback failed (${rollback_status})" >&2
 fi
-exit "${update_status}"
+exit "${status}"

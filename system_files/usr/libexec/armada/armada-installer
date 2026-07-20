@@ -499,99 +499,15 @@ EOF
 }
 
 stage_sm8250_grub() {
-    local model new_entry linux initrd options fdtdir dtb_rel grub_dir dtb match
-
-    eval "$(/usr/libexec/armada/device-env 2>/dev/null)" || true
-    [[ "${ARMADA_SOC_CLASS:-}" == SM8250 ]] || return 0
-
     # SM8250's ABL has no working per-device DTB auto-pick (see
     # finalize-armada-image.sh's fdtdir-detection comment) - an explicit GRUB
-    # devicetree line is the only way this family boots the right hardware,
-    # and unlike the SD card image, nothing stages GRUB for an internal
-    # install at all otherwise.
-    #
-    # Confirmed live: reading the running system's plain BLS entry's
-    # devicetree line (an earlier version of this function) picked the WRONG
-    # device (Flip2's DTB on a Mini V2) - that line is a fixed bootc/ostree-
-    # compat fallback pin finalize-armada-image.sh writes so blscfg's auto-
-    # rendered fallback entry doesn't boot an unpinned/wrong DTB, always
-    # preferring Flip2 if its DTB is present in the image, regardless of
-    # which device is actually running it - it was never meant to answer
-    # "which device is this". Match this device's own model string (the
-    # same one device-env's case statement matches on, read fresh here since
-    # device-env doesn't export it) against each candidate DTB's compiled
-    # strings table instead - fdtget/dtc isn't installed on-device, but a
-    # compiled DTB stores string properties as plain null-terminated ASCII,
-    # so a raw substring search for the exact model text is reliable without
-    # needing to parse the FDT structure at all.
-    model=$(tr -d '\0' </sys/firmware/devicetree/base/model 2>/dev/null)
-    [[ -n $model ]] || { echo "ERROR: could not read this device's model from devicetree; cannot stage GRUB for internal boot" >&2; exit 1; }
-
-    new_entry=$(armada_default_bls_entry "$TARGET/boot")
-    linux=$(sed -n 's/^linux //p' "$new_entry" | head -1)
-    initrd=$(sed -n 's/^initrd //p' "$new_entry" | head -1)
-    options=$(sed -n 's/^options //p' "$new_entry" | head -1)
-    fdtdir=$(sed -n 's/^fdtdir //p' "$new_entry" | head -1)
-    [[ -n $linux && -n $initrd && -n $options && -n $fdtdir ]] \
-        || { echo "ERROR: could not parse the new BLS entry for GRUB staging" >&2; exit 1; }
-
-    # rewrite_bls wrote these /boot-prefixed (armada-bootimg-update needs a
-    # full sysroot path); GRUB instead roots directly on the BOOT partition
-    # by UUID below, so the same paths are used here without that prefix -
-    # matching finalize-armada-image.sh's own (unprefixed) convention.
-    linux=${linux#/boot}
-    initrd=${initrd#/boot}
-    fdtdir=${fdtdir#/boot}
-
-    # Kernel packaging always installs SM8250 DTBs under a "qcom" vendor
-    # subdirectory of fdtdir (see finalize-armada-image.sh's own
-    # ${FDTDIR}/qcom/${base}.dtb) - fixed by the kernel package layout.
-    match=""
-    for dtb in "$TARGET/boot${fdtdir}"/qcom/sm8250-retroidpocket-*.dtb; do
-        [[ -f $dtb ]] || continue
-        grep -qa -F -- "$model" "$dtb" && { match=$(basename "$dtb"); break; }
-    done
-    [[ -n $match ]] || { echo "ERROR: no DTB under ${fdtdir}/qcom matches this device's model (${model}); cannot stage GRUB for internal boot" >&2; exit 1; }
-    dtb_rel="${fdtdir}/qcom/${match}"
-
-    grub_dir="$TARGET/boot/efi/boot/grub"
-    install -Dpm 0644 /usr/share/armada/grub/bootaa64.efi "$TARGET/boot/efi/EFI/BOOT/BOOTAA64.EFI"
-    install -d -m 0755 "$grub_dir"
-    install -m 0644 /usr/share/armada/grub/dejavu-mono.pf2 "$grub_dir/dejavu-mono.pf2"
-
-    {
-        echo "insmod part_gpt"
-        echo "insmod part_msdos"
-        echo "insmod fat"
-        echo "insmod ext2"
-        echo
-        echo "set lang=en_US"
-        echo "loadfont /boot/grub/dejavu-mono.pf2"
-        # Matches ROCKNIX's own value for this panel/mounting family
-        # (RP5/Flip2/Mini/Mini V2) - live-tested correct on Mini V2.
-        echo "set rotation=270"
-        echo "set gfxmode=auto"
-        echo "insmod efi_gop"
-        echo "insmod gfxterm"
-        echo "terminal_output gfxterm"
-        echo
-        echo "search --fs-uuid --set root --no-floppy ${BOOT_UUID}"
-        echo
-        # A brief visible menu (not hidden) rather than an instant autoboot:
-        # only one entry exists here, so nothing to choose, but a device that
-        # boots into a blank screen with no diagnostic is exactly the "did
-        # neither EFI nor GRUB load" failure mode this whole function exists
-        # to fix - a few seconds of visible GRUB output at least confirms
-        # this stage is reached if something further along still fails.
-        echo "set timeout_style=menu"
-        echo "set timeout=3"
-        echo
-        printf "menuentry 'Armada' {\n"
-        printf "    linux %s %s\n" "$linux" "$options"
-        printf "    initrd %s\n" "$initrd"
-        printf "    devicetree %s\n" "$dtb_rel"
-        printf "}\n"
-    } > "$grub_dir/grub.cfg"
+    # devicetree line is the only way this family boots the right hardware.
+    # armada-grub-update does the actual staging (device-model matching,
+    # GRUB config generation) - it's the same logic armada-bootimg-finalize
+    # now re-runs on every OTA update, so a later update can't leave this
+    # install pointing at a pruned deployment's files (see that script's own
+    # comment for why that matters and how it was confirmed live).
+    BOOTROOT="$TARGET/boot" ESP="$TARGET/boot/efi" /usr/libexec/armada/armada-grub-update
 }
 
 format_root() {
