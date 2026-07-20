@@ -97,14 +97,41 @@ if [[ -n "${KEEP_GRUB:-}" ]]; then
     if ! sudo test -f "${WORK}/boot/grub2/grubenv"; then
         sudo grub-editenv "${WORK}/boot/grub2/grubenv" create
     fi
-    # blscfg (called from the stock, do-not-edit grub.cfg) renders this same
-    # BLS entry as an extra, generic "Fedora Linux NN" menu item alongside the
-    # named ones below - confusing since it's unclear which device it boots.
-    # We've already pulled every field we need out of it, so rename it out of
-    # blscfg's `loader/entries/*.conf` glob (kept as .disabled, not deleted,
-    # in case ostree/bootc tooling wants to find it later) so only the named
-    # entries show.
-    sudo mv "${entry}" "${entry}.disabled"
+    # Precompute the default device before touching anything - blscfg's
+    # rendering of the original entry (below) and the named per-device menu
+    # (further below) both need to agree on it.
+    default_id=""
+    default_base=""
+    ids=()
+    for dtb in "${sm8250_dtbs[@]}"; do
+        base=$(basename "${dtb}" .dtb)
+        model=$(sudo fdtget -t s "${dtb}" / model 2>/dev/null) || model="${base}"
+        id=$(tr '[:upper:]' '[:lower:]' <<<"${model}" | tr -cs 'a-z0-9' '-' | sed 's/^-\+//; s/-\+$//')
+        ids+=("${id}")
+        [[ -z "${default_id}" ]] && { default_id="${id}"; default_base="${base}"; }
+        [[ "${base}" == *flip2 ]] && { default_id="${id}"; default_base="${base}"; }
+    done
+
+    # blscfg (called from the stock, do-not-edit grub.cfg) still renders this
+    # same BLS entry as an extra, generic "Fedora Linux NN" menu item
+    # alongside the named ones below. Renaming it out of blscfg's
+    # `loader/entries/*.conf` glob was tried first (kept as .disabled rather
+    # than deleted) - confirmed LIVE, not hypothetically, that this breaks
+    # `bootc status`/`rpm-ostree status` outright ("bootloader entry not
+    # found"): both need this exact file, at this exact path, to identify
+    # the booted deployment. Pin its fdtdir to the same default device the
+    # named menu resolves to instead - it still shows as a redundant,
+    # boringly-labeled entry, but picking it is now harmless rather than the
+    # wrong-DTB footgun an unpinned fdtdir was (see the fdtdir-detection
+    # comment above), and bootc/ostree tooling keeps working since the file
+    # never moves or disappears. Falls back to the old hide-it behavior only
+    # in the degenerate case of KEEP_GRUB forced with zero SM8250 DTBs
+    # present (no default device to pin to).
+    if [[ -n "${default_base}" ]]; then
+        sudo sed -i "s|^fdtdir .*|devicetree ${FDTDIR}/qcom/${default_base}.dtb|" "${entry}"
+    else
+        sudo mv "${entry}" "${entry}.disabled"
+    fi
 
     # One menu entry per SM8250 Retroid DTB found, so any future "865 series"
     # device tree added to armada-packages/kernel/dts picks up a boot menu
