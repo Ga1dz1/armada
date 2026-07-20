@@ -36,3 +36,4 @@ rm -f "${decky_service_tmp}"
 
 systemctl enable armada-decky-sync.service
 systemctl enable plugin_loader.service
+systemctl enable armada-decky-watchdog.timer
