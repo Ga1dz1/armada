@@ -1,5 +1,5 @@
 import { call } from "@decky/api";
-import type { CalibrationState, Capture, Config, InstalledGame, PowerConfig, StickLedState, Tweaks } from "./types";
+import type { CalibrationState, Capture, Config, DisplayState, InstalledGame, PowerConfig, StickLedState, Tweaks } from "./types";
 
 export const getConfig = () => call<[], Config>("get_config");
 export const getInstalledGames = () => call<[], InstalledGame[]>("get_installed_games");
@@ -35,3 +35,7 @@ export const saveCalibration = (capture: Capture) => call<[Capture], Calibration
 export const resetCalibration = () => call<[], CalibrationState>("reset_calibration");
 export const beginCalibrationSession = (token: string) => call<[string], boolean>("begin_calibration_session", token);
 export const endCalibrationSession = (token: string) => call<[string], boolean>("end_calibration_session", token);
+export const getDisplayState = () => call<[], DisplayState>("get_display_state");
+export const setDisplayConfig = (useExternal: boolean, connector: string, width: number, height: number, orientation: string) =>
+  call<[boolean, string, number, number, string], DisplayState>("set_display_config", useExternal, connector, width, height, orientation);
+export const restartGamescopeSession = () => call<[], { ok: boolean }>("restart_gamescope_session");

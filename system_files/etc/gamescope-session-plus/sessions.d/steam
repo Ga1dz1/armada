@@ -19,6 +19,41 @@ if [[ -n "${ARMADA_GAMESCOPE_FAKE_OUTPUT_MM:-}" ]]; then
     export GAMESCOPE_FAKE_OUTPUT_MM="$ARMADA_GAMESCOPE_FAKE_OUTPUT_MM"
 fi
 
+# Decky's Display menu writes this (armada-control's set_display_config
+# action) when the player picks an external screen as primary. Only trusted
+# if that connector is ACTUALLY connected right now: gamescope's own output
+# choice is a startup-time flag (no live hotplug re-pick), so a stale choice
+# from a monitor that's since been unplugged must fall back to the internal
+# panel defaults already set above, not strand the session on a dead output.
+ARMADA_DISPLAY_OVERRIDE=/etc/armada/display-override.conf
+if [[ -f "$ARMADA_DISPLAY_OVERRIDE" ]]; then
+    # shellcheck source=/dev/null
+    source "$ARMADA_DISPLAY_OVERRIDE"
+    if [[ -n "${ARMADA_DISPLAY_CONNECTOR:-}" ]]; then
+        display_connected=0
+        for status_file in /sys/class/drm/card*-"${ARMADA_DISPLAY_CONNECTOR}"/status; do
+            [[ -f "$status_file" ]] || continue
+            [[ "$(cat "$status_file" 2>/dev/null)" == "connected" ]] && display_connected=1
+        done
+        if (( display_connected )); then
+            # Listed first as a preference, not the only option: if the same
+            # connector somehow vanishes between this check and gamescope's
+            # own probe a moment later, it still falls back to the internal
+            # panel instead of failing to start.
+            OUTPUT_CONNECTOR="${ARMADA_DISPLAY_CONNECTOR},${OUTPUT_CONNECTOR}"
+            [[ -n "${ARMADA_DISPLAY_WIDTH:-}" ]] && SCREEN_WIDTH="$ARMADA_DISPLAY_WIDTH"
+            [[ -n "${ARMADA_DISPLAY_HEIGHT:-}" ]] && SCREEN_HEIGHT="$ARMADA_DISPLAY_HEIGHT"
+            [[ -n "${ARMADA_DISPLAY_ORIENTATION:-}" ]] && ORIENTATION="$ARMADA_DISPLAY_ORIENTATION"
+            # Both are internal-panel-specific quirks (fixed physical mount
+            # rotation, fixed refresh list for that exact panel) - applying
+            # them to an external monitor as well would fight the rotation/
+            # refresh rate the player just picked for it.
+            USE_ROTATION_SHADER=0
+            unset CUSTOM_REFRESH_RATES STEAM_DISPLAY_REFRESH_LIMITS
+        fi
+    fi
+fi
+
 # The 1024-sample PipeWire quantum SM8250 needs is set by armada-device-quirks
 # (system-level, before pipewire/wireplumber ever start - there's no pw-metadata
 # binary on this image to poke it at session time, and it wouldn't need to be

@@ -7,6 +7,7 @@ import { tabIcons } from "./icons";
 import { currentGame } from "./lib/games";
 import { styles } from "./styles";
 import { Compatibility } from "./tabs/Compatibility";
+import { Display } from "./tabs/Display";
 import { Power } from "./tabs/Power";
 import { Settings } from "./tabs/Settings";
 import type { Config } from "./types";
@@ -88,6 +89,7 @@ export function Content() {
         tabs={[
           { id: "Compatibility", title: tabIcons.Compatibility, content: tabContent(<Compatibility config={config} setConfig={setConfig} />) },
           { id: "Power", title: tabIcons.Power, content: tabContent(<Power config={config} setConfig={setConfig} />) },
+          { id: "Display", title: tabIcons.Display, content: tabContent(<Display />) },
           { id: "Advanced", title: tabIcons.Advanced, content: tabContent(<Settings config={config} setConfig={setConfig} />) },
         ]}
       />

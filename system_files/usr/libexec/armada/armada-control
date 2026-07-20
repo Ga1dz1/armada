@@ -19,6 +19,8 @@ CONFIG_PATHS = {
     "calibration": Path("/etc/armada/input-calibration.json"),
     "compat-applied": Path("/var/lib/armada/compat-applied.json"),
 }
+DISPLAY_OVERRIDE_PATH = Path("/etc/armada/display-override.conf")
+DISPLAY_ORIENTATIONS = {"normal", "left", "right", "upsidedown"}
 CALIBRATION_PARAMS = (
     "axis_leftx_min",
     "axis_leftx_center",
@@ -92,6 +94,108 @@ def device_env():
         except ValueError:
             env[key] = value
     return env
+
+
+def drm_connectors():
+    # gamescope-session-plus/sessions.d/steam picks its output by connector
+    # name (--prefer-output), so that's the unit both listing and applying a
+    # choice operate on - not a friendlier "monitor 1/2" index that could
+    # silently shift if a cable is unplugged between listing and applying.
+    connectors = []
+    drm = Path("/sys/class/drm")
+    if not drm.is_dir():
+        return connectors
+    for card_dir in sorted(drm.glob("card*-*")):
+        status_path = card_dir / "status"
+        if not status_path.is_file():
+            continue
+        try:
+            status = status_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        name = card_dir.name.split("-", 1)[1]
+        modes = []
+        modes_path = card_dir / "modes"
+        if modes_path.is_file():
+            seen = set()
+            try:
+                for line in modes_path.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line and line not in seen:
+                        seen.add(line)
+                        modes.append(line)
+            except OSError:
+                pass
+        connectors.append({"connector": name, "connected": status == "connected", "modes": modes})
+    return connectors
+
+
+def action_list_displays(request):
+    primary = device_env().get("ARMADA_PRIMARY_CONNECTOR", "")
+    connectors = drm_connectors()
+    for c in connectors:
+        c["internal"] = c["connector"] == primary
+    return {"connectors": connectors, "primaryConnector": primary}
+
+
+def action_get_display_config(request):
+    if not DISPLAY_OVERRIDE_PATH.exists():
+        return {"useExternal": False}
+    values = {}
+    try:
+        for line in DISPLAY_OVERRIDE_PATH.read_text(encoding="utf-8").splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                values[key] = value
+    except OSError:
+        return {"useExternal": False}
+    return {
+        "useExternal": True,
+        "connector": values.get("ARMADA_DISPLAY_CONNECTOR", ""),
+        "width": int(values.get("ARMADA_DISPLAY_WIDTH") or 0),
+        "height": int(values.get("ARMADA_DISPLAY_HEIGHT") or 0),
+        "orientation": values.get("ARMADA_DISPLAY_ORIENTATION", "normal"),
+    }
+
+
+def action_set_display_config(request):
+    if not bool(request.get("useExternal")):
+        try:
+            DISPLAY_OVERRIDE_PATH.unlink()
+        except FileNotFoundError:
+            pass
+        return {"ok": True}
+
+    connector = str(request.get("connector", ""))
+    orientation = str(request.get("orientation", "normal"))
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", connector):
+        raise ValueError("invalid connector")
+    if orientation not in DISPLAY_ORIENTATIONS:
+        raise ValueError("invalid orientation")
+    try:
+        width = int(request.get("width"))
+        height = int(request.get("height"))
+    except (TypeError, ValueError):
+        raise ValueError("invalid resolution")
+    if not (0 < width <= 16384 and 0 < height <= 16384):
+        raise ValueError("invalid resolution")
+
+    text = (
+        f"ARMADA_DISPLAY_CONNECTOR={connector}\n"
+        f"ARMADA_DISPLAY_WIDTH={width}\n"
+        f"ARMADA_DISPLAY_HEIGHT={height}\n"
+        f"ARMADA_DISPLAY_ORIENTATION={orientation}\n"
+    )
+    atomic_write(DISPLAY_OVERRIDE_PATH, text)
+    return {"ok": True}
+
+
+def action_restart_gamescope_session(request):
+    # Output connector/resolution/rotation are gamescope startup flags (see
+    # sessions.d/steam) - applying a new display choice needs the session
+    # relaunched, not just the config file rewritten.
+    run(["/usr/libexec/armada/session-control", "switch-gamemode"], timeout=15)
+    return {"ok": True}
 
 
 def action_set_controller_type(request):
@@ -316,6 +420,10 @@ ACTIONS = {
     "set_stick_led_flash_color": action_set_stick_led_flash_color,
     "set_stick_led_duotone_color": action_set_stick_led_duotone_color,
     "set_stick_led_duotone_orientation": action_set_stick_led_duotone_orientation,
+    "list_displays": action_list_displays,
+    "get_display_config": action_get_display_config,
+    "set_display_config": action_set_display_config,
+    "restart_gamescope_session": action_restart_gamescope_session,
 }
 
 

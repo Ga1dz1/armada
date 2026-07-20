@@ -9,6 +9,7 @@ from armada_control.calibration import (
 )
 from armada_control.config import build_config
 from armada_control.controller import set_controller_type
+from armada_control.display import display_state, restart_gamescope_session, set_display_config
 from armada_control.lighting import (
     set_stick_led_color,
     set_stick_led_duotone_color,
@@ -72,6 +73,15 @@ class Plugin:
 
     async def set_stick_led_duotone_orientation(self, side, orientation):
         return await asyncio.to_thread(set_stick_led_duotone_orientation, side, orientation)
+
+    async def get_display_state(self):
+        return await asyncio.to_thread(display_state)
+
+    async def set_display_config(self, use_external, connector, width, height, orientation):
+        return await asyncio.to_thread(set_display_config, use_external, connector, width, height, orientation)
+
+    async def restart_gamescope_session(self):
+        return await asyncio.to_thread(restart_gamescope_session)
 
     async def get_controller_state(self):
         return await asyncio.to_thread(controller_state)

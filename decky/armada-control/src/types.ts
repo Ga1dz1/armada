@@ -103,6 +103,23 @@ export interface Config {
   stickLed: StickLedState;
 }
 
+export interface DisplayConnector {
+  connector: string;
+  connected: boolean;
+  internal: boolean;
+  modes: string[];
+}
+
+export interface DisplayState {
+  connectors: DisplayConnector[];
+  primaryConnector: string;
+  useExternal: boolean;
+  connector: string;
+  width: number;
+  height: number;
+  orientation: string;
+}
+
 export type Capture = Record<string, { center: number; min: number; max: number; range: number }>;
 
 export interface DropdownChoice {
