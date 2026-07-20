@@ -499,7 +499,7 @@ EOF
 }
 
 stage_sm8250_grub() {
-    local running_entry running_dtb new_entry linux initrd options fdtdir dtb_rel grub_dir
+    local model new_entry linux initrd options fdtdir dtb_rel grub_dir dtb match
 
     eval "$(/usr/libexec/armada/device-env 2>/dev/null)" || true
     [[ "${ARMADA_SOC_CLASS:-}" == SM8250 ]] || return 0
@@ -508,13 +508,24 @@ stage_sm8250_grub() {
     # finalize-armada-image.sh's fdtdir-detection comment) - an explicit GRUB
     # devicetree line is the only way this family boots the right hardware,
     # and unlike the SD card image, nothing stages GRUB for an internal
-    # install at all otherwise. Reuse whichever DTB the running system
-    # (booted from the SD card, already pinned by that same fix) resolved to,
-    # rather than re-deriving a device->DTB mapping a second time here.
-    running_entry=$(armada_default_bls_entry /boot)
-    [[ -n $running_entry ]] || { echo "ERROR: could not find the running BLS entry; cannot stage GRUB for internal boot" >&2; exit 1; }
-    running_dtb=$(sed -n 's|^devicetree .*/||p' "$running_entry")
-    [[ -n $running_dtb ]] || { echo "ERROR: running BLS entry has no pinned devicetree; cannot stage GRUB for internal boot" >&2; exit 1; }
+    # install at all otherwise.
+    #
+    # Confirmed live: reading the running system's plain BLS entry's
+    # devicetree line (an earlier version of this function) picked the WRONG
+    # device (Flip2's DTB on a Mini V2) - that line is a fixed bootc/ostree-
+    # compat fallback pin finalize-armada-image.sh writes so blscfg's auto-
+    # rendered fallback entry doesn't boot an unpinned/wrong DTB, always
+    # preferring Flip2 if its DTB is present in the image, regardless of
+    # which device is actually running it - it was never meant to answer
+    # "which device is this". Match this device's own model string (the
+    # same one device-env's case statement matches on, read fresh here since
+    # device-env doesn't export it) against each candidate DTB's compiled
+    # strings table instead - fdtget/dtc isn't installed on-device, but a
+    # compiled DTB stores string properties as plain null-terminated ASCII,
+    # so a raw substring search for the exact model text is reliable without
+    # needing to parse the FDT structure at all.
+    model=$(tr -d '\0' </sys/firmware/devicetree/base/model 2>/dev/null)
+    [[ -n $model ]] || { echo "ERROR: could not read this device's model from devicetree; cannot stage GRUB for internal boot" >&2; exit 1; }
 
     new_entry=$(armada_default_bls_entry "$TARGET/boot")
     linux=$(sed -n 's/^linux //p' "$new_entry" | head -1)
@@ -531,12 +542,17 @@ stage_sm8250_grub() {
     linux=${linux#/boot}
     initrd=${initrd#/boot}
     fdtdir=${fdtdir#/boot}
+
     # Kernel packaging always installs SM8250 DTBs under a "qcom" vendor
     # subdirectory of fdtdir (see finalize-armada-image.sh's own
-    # ${FDTDIR}/qcom/${base}.dtb) - fixed by the kernel package layout, not
-    # per-device, so it's the same on the running system and this new install.
-    dtb_rel="${fdtdir}/qcom/${running_dtb}"
-    [[ -f "$TARGET/boot${dtb_rel}" ]] || { echo "ERROR: ${dtb_rel} missing from the new install; cannot stage GRUB for internal boot" >&2; exit 1; }
+    # ${FDTDIR}/qcom/${base}.dtb) - fixed by the kernel package layout.
+    match=""
+    for dtb in "$TARGET/boot${fdtdir}"/qcom/sm8250-retroidpocket-*.dtb; do
+        [[ -f $dtb ]] || continue
+        grep -qa -F -- "$model" "$dtb" && { match=$(basename "$dtb"); break; }
+    done
+    [[ -n $match ]] || { echo "ERROR: no DTB under ${fdtdir}/qcom matches this device's model (${model}); cannot stage GRUB for internal boot" >&2; exit 1; }
+    dtb_rel="${fdtdir}/qcom/${match}"
 
     grub_dir="$TARGET/boot/efi/boot/grub"
     install -Dpm 0644 /usr/share/armada/grub/bootaa64.efi "$TARGET/boot/efi/EFI/BOOT/BOOTAA64.EFI"
