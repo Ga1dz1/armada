@@ -10,6 +10,23 @@ kargs = [
 
     "enforcing=0",
 
+    # These are handheld game consoles with no keyboard - dropping to an
+    # interactive rescue/emergency shell on a boot failure is not a
+    # recoverable state for a player, only a permanent hang requiring a
+    # forced power-off. Confirmed live: a real DSI PLL lock failure (a
+    # genuine driver/hardware fault, not just log noise - see the kernel
+    # patch that removed the log spam ABOUT this same fault, which did NOT
+    # fix the fault itself) dropped straight to dracut's initrd emergency
+    # shell mid-boot with no way to proceed. rd.emergency=reboot makes
+    # dracut reboot instead of waiting for input nobody can provide;
+    # systemd.emergency_action=reboot covers the same failure mode if it
+    # happens later, in the real root, instead of the initrd. Not a fix for
+    # whatever's actually still causing DSI PLL to fail - just a floor so
+    # that failure (or any other init-time fault) can't strand the device
+    # indefinitely the way it did here.
+    "rd.emergency=reboot",
+    "systemd.emergency_action=reboot",
+
     "allow_mismatched_32bit_el0",
     "fw_devlink.strict=1",
     "pcie_ports=compat",
