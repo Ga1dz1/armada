@@ -39,6 +39,11 @@ systemctl enable armada-steamos-manager.service
 systemctl --global enable armada-steamos-manager.service
 systemctl enable armada-bootimg-sync.service
 systemctl enable armada-flatpak-setup.service
+systemctl enable armada-waydroid-input.path
+# waydroid-container.service would auto-start Waydroid's LXC session on
+# every boot; leave it opt-in (launched by Waydroid's own UI/CLI) rather
+# than always-on background overhead for people who never use it.
+systemctl disable waydroid-container.service
 
 # Updates are manual (Steam UI / steamos-update). The base image enables this
 # timer, which would auto-pull multi-GB images on metered tethering. Opt in with

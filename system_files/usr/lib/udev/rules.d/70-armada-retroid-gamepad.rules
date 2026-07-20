@@ -11,3 +11,10 @@
 # keep working off phys_path/MODE=0666 alone.
 SUBSYSTEM=="input", ATTRS{name}=="Retroid Pocket Gamepad", MODE="0666"
 SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT}=="1", ATTRS{name}=="pmi8998_haptics", TAG+="uaccess", ENV{FEEDBACKD_TYPE}="vibra"
+
+# Marks the raw event node so waydroid-input-setup can find it and expose it
+# to Waydroid, same mechanism as the AYN family's own rule in
+# 70-armada-inputplumber.rules. MODE/uaccess for this device are already
+# handled by the line above - passthrough (01-retroid-controller.yaml)
+# already leaves it visible, this just tags which node it is.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Retroid Pocket Gamepad", ENV{ARMADA_WAYDROID_GAMEPAD}="1"
