@@ -24,6 +24,10 @@ export const setStickLedParam = (param: string, mode: string, value: number) =>
   call<[string, string, number], StickLedState>("set_stick_led_param", param, mode, value);
 export const setStickLedFlashColor = (button: string, value: string) =>
   call<[string, string], StickLedState>("set_stick_led_flash_color", button, value);
+export const setStickLedDuotoneColor = (slot: "a" | "b", value: string) =>
+  call<[string, string], StickLedState>("set_stick_led_duotone_color", slot, value);
+export const setStickLedDuotoneOrientation = (orientation: string) =>
+  call<[string], StickLedState>("set_stick_led_duotone_orientation", orientation);
 export const getControllerState = () => call<[], CalibrationState>("get_controller_state");
 export const saveCalibration = (capture: Capture) => call<[Capture], CalibrationState>("save_calibration", capture);
 export const resetCalibration = () => call<[], CalibrationState>("reset_calibration");

@@ -75,6 +75,10 @@ export interface StickLedState {
   mode: string;
   color: string;
   screenLink: boolean;
+  duotoneUnlocked: boolean;
+  duotoneColorA: string;
+  duotoneColorB: string;
+  duotoneOrientation: string;
   params: Record<string, number>;
   flashColors: Record<string, string>;
 }

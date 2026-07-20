@@ -68,7 +68,7 @@ SUSPEND_POLL_INTERVAL = 0.5
 DEFAULT_COLOR = "0050FF"
 DEFAULT_MODE = "static"
 DEFAULT_SCREEN_LINK = False
-MODES = ("static", "breathing", "battery", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot", "ambilight")
+MODES = ("static", "breathing", "battery", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot", "ambilight", "duotone")
 ANIMATED_MODES = ("breathing", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot", "ambilight")
 LED_BASE = Path("/sys/class/leds")
 POWER_SUPPLY_BASE = Path("/sys/class/power_supply")
@@ -76,6 +76,25 @@ BACKLIGHT_BASE = Path("/sys/class/backlight")
 SIDES = ("l", "r")
 ZONES = (1, 2, 3, 4)
 IDLE_INTERVAL = 5.0
+# "duotone" is deliberately left out of any UI's default mode list - it's
+# unlocked by holding the Select+L1+R1 chord (see ComboWatcher below), not
+# picked from a menu. Two colors and a split orientation, same get/set
+# pattern as the other per-mode settings. Zone-to-physical-position mapping
+# (which zone index actually sits where on the ring) is a best guess
+# pending confirmation on real hardware - the three DUOTONE_ZONE_GROUPS
+# entries assume zones 1-4 sit at NE/SE/SW/NW in that clockwise order
+# (matching chase's sweep direction); adjust the tuples below once a real
+# device confirms or corrects it.
+DUOTONE_FLAG = Path("/etc/armada/stick-led-duotone-unlocked")
+DEFAULT_DUOTONE_COLOR_A = "0050FF"
+DEFAULT_DUOTONE_COLOR_B = "FFD700"
+DEFAULT_DUOTONE_ORIENTATION = "horizontal"
+DUOTONE_ORIENTATIONS = ("horizontal", "vertical", "diagonal")
+DUOTONE_ZONE_GROUPS = {
+    "horizontal": ((1, 4), (2, 3)),  # top (NE+NW) vs bottom (SE+SW)
+    "vertical": ((1, 2), (4, 3)),    # right (NE+SE) vs left (NW+SW)
+    "diagonal": ((1, 3), (4, 2)),    # NE+SW vs NW+SE
+}
 BREATH_INTERVAL = 0.05
 BREATH_PERIOD_S = 3.5
 BASE_BREATH_STEP = (2 * math.pi) / (BREATH_PERIOD_S / BREATH_INTERVAL)  # at speed=1.0
@@ -275,6 +294,73 @@ def stick_reactive_rgb(x, y, floor):
     return tuple(c * 255 * level for c in colorsys.hsv_to_rgb(hue, 1.0, 1.0))
 
 
+# --- duotone unlock chord: raw evdev reader ---------------------------------
+# Raw BTN_* codes for the three-button chord that flips DUOTONE_FLAG. Uses
+# the same non-exclusive open() as ReactiveInput, but stays open across every
+# mode (not just reactive) since the chord has to work regardless of what's
+# currently selected.
+COMBO_CODES = {0x136: "l1", 0x137: "r1", 0x13a: "select"}  # BTN_TL, BTN_TR, BTN_SELECT
+
+
+class ComboWatcher:
+    def __init__(self):
+        self.fd = None
+        self.held = set()
+        self.latched = False
+
+    def ensure_open(self):
+        if self.fd is not None:
+            return True
+        path = gamepad_device_path()
+        if path is None:
+            return False
+        try:
+            fd = os.open(str(path), os.O_RDONLY | os.O_NONBLOCK)
+        except OSError:
+            return False
+        self.fd = fd
+        return True
+
+    def close(self):
+        if self.fd is not None:
+            try:
+                os.close(self.fd)
+            except OSError:
+                pass
+            self.fd = None
+
+    def poll(self):
+        if not self.ensure_open():
+            return
+        try:
+            while select.select([self.fd], [], [], 0)[0]:
+                chunk = os.read(self.fd, INPUT_EVENT_SIZE)
+                if len(chunk) != INPUT_EVENT_SIZE:
+                    break
+                _, _, ev_type, code, value = struct.unpack(INPUT_EVENT_FMT, chunk)
+                if ev_type != EV_KEY or code not in COMBO_CODES:
+                    continue
+                name = COMBO_CODES[code]
+                if value:
+                    self.held.add(name)
+                elif name in self.held:
+                    self.held.discard(name)
+                    self.latched = False
+        except OSError:
+            self.close()
+            return
+        if len(self.held) == len(COMBO_CODES) and not self.latched:
+            self.latched = True
+            try:
+                if DUOTONE_FLAG.exists():
+                    DUOTONE_FLAG.unlink()
+                else:
+                    DUOTONE_FLAG.parent.mkdir(parents=True, exist_ok=True)
+                    DUOTONE_FLAG.touch()
+            except OSError:
+                pass
+
+
 # --- ambilight mode: DRM framebuffer color sampling ------------------------
 # Each stick sits below and to its own side of the panel, not behind the
 # whole screen, so this samples a strip near each screen edge instead of
@@ -430,12 +516,13 @@ class AmbilightSampler:
 
 def load_state():
     mode, color, screen_link = DEFAULT_MODE, DEFAULT_COLOR, DEFAULT_SCREEN_LINK
+    duotone_color_a, duotone_color_b, duotone_orientation = DEFAULT_DUOTONE_COLOR_A, DEFAULT_DUOTONE_COLOR_B, DEFAULT_DUOTONE_ORIENTATION
     settings = {}
     flash_colors = {}
     try:
         lines = CONFIG.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
-        return mode, color, screen_link, settings, flash_colors
+        return mode, color, screen_link, settings, flash_colors, duotone_color_a, duotone_color_b, duotone_orientation
     for line in lines:
         key, sep, raw = line.partition("=")
         if not sep:
@@ -447,6 +534,12 @@ def load_state():
             color = raw
         elif key == "screen_link":
             screen_link = raw == "1"
+        elif key == "duotone_color_a" and re.fullmatch(r"[0-9A-Fa-f]{6}", raw or ""):
+            duotone_color_a = raw.upper()
+        elif key == "duotone_color_b" and re.fullmatch(r"[0-9A-Fa-f]{6}", raw or ""):
+            duotone_color_b = raw.upper()
+        elif key == "duotone_orientation" and raw in DUOTONE_ORIENTATIONS:
+            duotone_orientation = raw
         elif key.startswith("flash_") and key[len("flash_"):] in FLASH_BUTTONS:
             if re.fullmatch(r"[0-9A-Fa-f]{6}", raw or ""):
                 flash_colors[key[len("flash_"):]] = raw.upper()
@@ -455,12 +548,15 @@ def load_state():
                 settings[key] = float(raw)
             except ValueError:
                 pass
-    return mode, color, screen_link, settings, flash_colors
+    return mode, color, screen_link, settings, flash_colors, duotone_color_a, duotone_color_b, duotone_orientation
 
 
-def save_state(mode, color, screen_link, settings, flash_colors):
+def save_state(mode, color, screen_link, settings, flash_colors, duotone_color_a, duotone_color_b, duotone_orientation):
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    lines = [f"mode={mode}", f"color={color}", f"screen_link={'1' if screen_link else '0'}"]
+    lines = [
+        f"mode={mode}", f"color={color}", f"screen_link={'1' if screen_link else '0'}",
+        f"duotone_color_a={duotone_color_a}", f"duotone_color_b={duotone_color_b}", f"duotone_orientation={duotone_orientation}",
+    ]
     for key in sorted(settings):
         lines.append(f"{key}={settings[key]:.3f}")
     for button in sorted(flash_colors):
@@ -560,6 +656,21 @@ def apply_hex(hex_color, scale=1.0):
     return apply_rgb(r * scale, g * scale, b * scale)
 
 
+def apply_duotone(color_a, color_b, orientation, scale=1.0):
+    ok = False
+    ar, ag, ab = int(color_a[0:2], 16), int(color_a[2:4], 16), int(color_a[4:6], 16)
+    br, bg, bb = int(color_b[0:2], 16), int(color_b[2:4], 16), int(color_b[4:6], 16)
+    zones_a, zones_b = DUOTONE_ZONE_GROUPS.get(orientation, DUOTONE_ZONE_GROUPS[DEFAULT_DUOTONE_ORIENTATION])
+    for side in SIDES:
+        for zone in zones_a:
+            if write_zone(side, zone, ar * scale, ag * scale, ab * scale):
+                ok = True
+        for zone in zones_b:
+            if write_zone(side, zone, br * scale, bg * scale, bb * scale):
+                ok = True
+    return ok
+
+
 def battery_rgb():
     best = None
     for supply in POWER_SUPPLY_BASE.glob("*"):
@@ -599,8 +710,10 @@ def rainbow_rgb(phase):
 
 
 def apply_current():
-    mode, color, screen_link, _, _ = load_state()
+    mode, color, screen_link, _, _, duotone_color_a, duotone_color_b, duotone_orientation = load_state()
     scale = screen_scale() if screen_link else 1.0
+    if mode == "duotone":
+        return apply_duotone(duotone_color_a, duotone_color_b, duotone_orientation, scale)
     r, g, b = rainbow_rgb(0.0) if mode == "rainbow" else base_rgb(mode, color)
     return apply_rgb(r * scale, g * scale, b * scale)
 
@@ -611,7 +724,9 @@ def run_daemon():
     multidot_pos = 0.0
     reactive = ReactiveInput()
     ambilight = AmbilightSampler()
+    combo = ComboWatcher()
     while True:
+        combo.poll()
         if SUSPEND_FLAG.exists():
             reactive.close()
             ambilight.close()
@@ -619,7 +734,7 @@ def run_daemon():
             phase = chase_pos = multidot_pos = 0.0
             time.sleep(SUSPEND_POLL_INTERVAL)
             continue
-        mode, color, screen_link, settings, flash_colors = load_state()
+        mode, color, screen_link, settings, flash_colors, duotone_color_a, duotone_color_b, duotone_orientation = load_state()
         scale = screen_scale() if screen_link else 1.0
         if mode != "reactive":
             reactive.close()
@@ -672,17 +787,33 @@ def run_daemon():
                 phase = (phase + BASE_BREATH_STEP * get_param(settings, "speed", mode)) % (2 * math.pi)
             time.sleep(BREATH_INTERVAL)
         else:
-            r, g, b = base_rgb(mode, color)
-            apply_rgb(r * scale, g * scale, b * scale)
+            if mode == "duotone":
+                apply_duotone(duotone_color_a, duotone_color_b, duotone_orientation, scale)
+            else:
+                r, g, b = base_rgb(mode, color)
+                apply_rgb(r * scale, g * scale, b * scale)
             phase = chase_pos = multidot_pos = 0.0
-            time.sleep(IDLE_INTERVAL if not screen_link else BREATH_INTERVAL * 4)
+            # Chunked instead of one long sleep so the duotone unlock chord
+            # (ComboWatcher, polled each chunk) stays responsive even while
+            # idling in a static mode - IDLE_INTERVAL alone would mean up to
+            # 5s of dead time between chord checks.
+            remaining = IDLE_INTERVAL if not screen_link else BREATH_INTERVAL * 4
+            while remaining > 0:
+                step = min(0.1, remaining)
+                time.sleep(step)
+                combo.poll()
+                remaining -= step
 
 
 def print_state():
-    mode, color, screen_link, settings, flash_colors = load_state()
+    mode, color, screen_link, settings, flash_colors, duotone_color_a, duotone_color_b, duotone_orientation = load_state()
     print(f"mode={mode}")
     print(f"color={color}")
     print(f"screen_link={'1' if screen_link else '0'}")
+    print(f"duotone_unlocked={'1' if DUOTONE_FLAG.exists() else '0'}")
+    print(f"duotone_color_a={duotone_color_a}")
+    print(f"duotone_color_b={duotone_color_b}")
+    print(f"duotone_orientation={duotone_orientation}")
     for param in PARAM_SPECS:
         for m in PARAM_SPECS[param]["modes"]:
             print(f"{param}_{m}={get_param(settings, param, m):.3f}")
@@ -700,24 +831,24 @@ def main(argv):
             print("usage: stick-led-color set <RRGGBB hex>", file=sys.stderr)
             return 2
         value = argv[2].upper()
-        _, _, screen_link, settings, flash_colors = load_state()
+        _, _, screen_link, settings, flash_colors, da, db, dor = load_state()
         if not apply_hex(value, screen_scale() if screen_link else 1.0):
             return 1
-        save_state("static", value, screen_link, settings, flash_colors)
+        save_state("static", value, screen_link, settings, flash_colors, da, db, dor)
         return 0
     if command == "set-mode":
         if len(argv) != 3 or argv[2] not in MODES:
             print(f"usage: stick-led-color set-mode <{'|'.join(MODES)}>", file=sys.stderr)
             return 2
-        _, color, screen_link, settings, flash_colors = load_state()
-        save_state(argv[2], color, screen_link, settings, flash_colors)
+        _, color, screen_link, settings, flash_colors, da, db, dor = load_state()
+        save_state(argv[2], color, screen_link, settings, flash_colors, da, db, dor)
         return 0 if apply_current() else 1
     if command == "set-screen-link":
         if len(argv) != 3 or argv[2] not in ("on", "off"):
             print("usage: stick-led-color set-screen-link <on|off>", file=sys.stderr)
             return 2
-        mode, color, _, settings, flash_colors = load_state()
-        save_state(mode, color, argv[2] == "on", settings, flash_colors)
+        mode, color, _, settings, flash_colors, da, db, dor = load_state()
+        save_state(mode, color, argv[2] == "on", settings, flash_colors, da, db, dor)
         return 0 if apply_current() else 1
     if command == "set-param":
         if len(argv) != 5 or argv[2] not in PARAM_SPECS:
@@ -733,18 +864,36 @@ def main(argv):
         except ValueError:
             print("invalid value", file=sys.stderr)
             return 2
-        mode, color, screen_link, settings, flash_colors = load_state()
+        mode, color, screen_link, settings, flash_colors, da, db, dor = load_state()
         settings[f"{param}_{key}"] = value
-        save_state(mode, color, screen_link, settings, flash_colors)
+        save_state(mode, color, screen_link, settings, flash_colors, da, db, dor)
         return 0
     if command == "set-flash-color":
         if len(argv) != 4 or argv[2] not in FLASH_BUTTONS or not re.fullmatch(r"[0-9A-Fa-f]{6}", argv[3]):
             print(f"usage: stick-led-color set-flash-color <{'|'.join(FLASH_BUTTONS)}> <RRGGBB hex>", file=sys.stderr)
             return 2
-        mode, color, screen_link, settings, flash_colors = load_state()
+        mode, color, screen_link, settings, flash_colors, da, db, dor = load_state()
         flash_colors[argv[2]] = argv[3].upper()
-        save_state(mode, color, screen_link, settings, flash_colors)
+        save_state(mode, color, screen_link, settings, flash_colors, da, db, dor)
         return 0
+    if command == "set-duotone-color":
+        if len(argv) != 4 or argv[2] not in ("a", "b") or not re.fullmatch(r"[0-9A-Fa-f]{6}", argv[3]):
+            print("usage: stick-led-color set-duotone-color <a|b> <RRGGBB hex>", file=sys.stderr)
+            return 2
+        mode, color, screen_link, settings, flash_colors, da, db, dor = load_state()
+        if argv[2] == "a":
+            da = argv[3].upper()
+        else:
+            db = argv[3].upper()
+        save_state(mode, color, screen_link, settings, flash_colors, da, db, dor)
+        return 0 if apply_current() else 1
+    if command == "set-duotone-orientation":
+        if len(argv) != 3 or argv[2] not in DUOTONE_ORIENTATIONS:
+            print(f"usage: stick-led-color set-duotone-orientation <{'|'.join(DUOTONE_ORIENTATIONS)}>", file=sys.stderr)
+            return 2
+        mode, color, screen_link, settings, flash_colors, da, db, _ = load_state()
+        save_state(mode, color, screen_link, settings, flash_colors, da, db, argv[2])
+        return 0 if apply_current() else 1
     if command == "apply":
         return 0 if apply_current() else 1
     if command == "daemon":
@@ -752,7 +901,8 @@ def main(argv):
         return 0
     print(
         "usage: stick-led-color get|set <RRGGBB>|set-mode <mode>|set-screen-link <on|off>"
-        "|set-param <param> <mode> <value>|set-flash-color <button> <RRGGBB>|apply|daemon",
+        "|set-param <param> <mode> <value>|set-flash-color <button> <RRGGBB>"
+        "|set-duotone-color <a|b> <RRGGBB>|set-duotone-orientation <horizontal|vertical|diagonal>|apply|daemon",
         file=sys.stderr,
     )
     return 2

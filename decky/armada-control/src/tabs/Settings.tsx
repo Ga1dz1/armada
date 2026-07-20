@@ -5,6 +5,8 @@ import {
   setControllerType as applyControllerType,
   setSshEnabled as applySshEnabled,
   setStickLedColor as applyStickLedColor,
+  setStickLedDuotoneColor as applyStickLedDuotoneColor,
+  setStickLedDuotoneOrientation as applyStickLedDuotoneOrientation,
   setStickLedFlashColor as applyStickLedFlashColor,
   setStickLedMode as applyStickLedMode,
   setStickLedParam as applyStickLedParam,
@@ -45,6 +47,12 @@ const MODE_OPTIONS: { data: string; label: string }[] = [
   { data: "ambilight", label: "Ambilight (matches screen)" },
 ];
 const COLOR_VISIBLE_MODES = new Set(["static", "breathing", "chase", "alternating"]);
+
+const DUOTONE_ORIENTATION_OPTIONS: { data: string; label: string }[] = [
+  { data: "horizontal", label: "Horizontal" },
+  { data: "vertical", label: "Vertical" },
+  { data: "diagonal", label: "Diagonal" },
+];
 
 const FLASH_BUTTON_OPTIONS: { data: string; label: string }[] = [
   { data: "south", label: "South" },
@@ -133,6 +141,10 @@ export function Settings({ config, setConfig }: {
   const [flashButton, setFlashButton] = useState("south");
   const stickLed = config.stickLed;
   const mode = stickLed?.mode || "static";
+  // "duotone" stays out of the list until unlocked (Select+L1+R1 held
+  // together, see ComboWatcher in stick-led-color) - not a normal preset,
+  // so it doesn't get a spot in the default menu.
+  const modeOptions = stickLed?.duotoneUnlocked ? [...MODE_OPTIONS, { data: "duotone", label: "Duotone" }] : MODE_OPTIONS;
   const setStickLedMode = async (nextMode: string) => {
     if (!stickLed) return;
     const previous = stickLed.mode;
@@ -214,6 +226,35 @@ export function Settings({ config, setConfig }: {
       );
     }
   };
+  const setStickLedDuotoneColor = async (slot: "a" | "b", hex: string) => {
+    if (!stickLed) return;
+    const field = slot === "a" ? "duotoneColorA" : "duotoneColorB";
+    const previous = stickLed[field];
+    setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, [field]: hex } } : current));
+    try {
+      const applied = await applyStickLedDuotoneColor(slot, hex);
+      setConfig((current) => (current ? { ...current, stickLed: applied } : current));
+    } catch (error) {
+      setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, [field]: previous } } : current));
+    }
+  };
+  const setDuotoneChannel = (slot: "a" | "b", channel: 0 | 1 | 2, value: number) => {
+    if (!stickLed) return;
+    const rgb = hexToRgb(slot === "a" ? stickLed.duotoneColorA : stickLed.duotoneColorB);
+    rgb[channel] = value;
+    void setStickLedDuotoneColor(slot, rgbToHex(rgb[0], rgb[1], rgb[2]));
+  };
+  const setStickLedDuotoneOrientation = async (orientation: string) => {
+    if (!stickLed) return;
+    const previous = stickLed.duotoneOrientation;
+    setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, duotoneOrientation: orientation } } : current));
+    try {
+      const applied = await applyStickLedDuotoneOrientation(orientation);
+      setConfig((current) => (current ? { ...current, stickLed: applied } : current));
+    } catch (error) {
+      setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, duotoneOrientation: previous } } : current));
+    }
+  };
   return (
     <>
       <PanelSection title="Controller">
@@ -227,7 +268,7 @@ export function Settings({ config, setConfig }: {
       </PanelSection>
       {stickLed?.supported && (
         <PanelSection title="Stick Lighting">
-          <SelectEdit label="Mode" value={mode} options={MODE_OPTIONS} onChange={setStickLedMode} />
+          <SelectEdit label="Mode" value={mode} options={modeOptions} onChange={setStickLedMode} />
           {Object.entries(PARAM_UI)
             .filter(([, spec]) => spec.modes.has(aliasMode(mode)))
             .map(([param, spec]) => {
@@ -330,6 +371,66 @@ export function Settings({ config, setConfig }: {
                   />
                 </>
               )}
+            </>
+          )}
+          {mode === "duotone" && (
+            <>
+              <SelectEdit
+                label="Split"
+                value={stickLed.duotoneOrientation || "horizontal"}
+                options={DUOTONE_ORIENTATION_OPTIONS}
+                onChange={setStickLedDuotoneOrientation}
+              />
+              <Field label="Color A" />
+              <SliderEdit
+                label="A: Red"
+                value={hexToRgb(stickLed.duotoneColorA)[0]}
+                min={0}
+                max={255}
+                step={1}
+                onChange={(value) => setDuotoneChannel("a", 0, value)}
+              />
+              <SliderEdit
+                label="A: Green"
+                value={hexToRgb(stickLed.duotoneColorA)[1]}
+                min={0}
+                max={255}
+                step={1}
+                onChange={(value) => setDuotoneChannel("a", 1, value)}
+              />
+              <SliderEdit
+                label="A: Blue"
+                value={hexToRgb(stickLed.duotoneColorA)[2]}
+                min={0}
+                max={255}
+                step={1}
+                onChange={(value) => setDuotoneChannel("a", 2, value)}
+              />
+              <Field label="Color B" />
+              <SliderEdit
+                label="B: Red"
+                value={hexToRgb(stickLed.duotoneColorB)[0]}
+                min={0}
+                max={255}
+                step={1}
+                onChange={(value) => setDuotoneChannel("b", 0, value)}
+              />
+              <SliderEdit
+                label="B: Green"
+                value={hexToRgb(stickLed.duotoneColorB)[1]}
+                min={0}
+                max={255}
+                step={1}
+                onChange={(value) => setDuotoneChannel("b", 1, value)}
+              />
+              <SliderEdit
+                label="B: Blue"
+                value={hexToRgb(stickLed.duotoneColorB)[2]}
+                min={0}
+                max={255}
+                step={1}
+                onChange={(value) => setDuotoneChannel("b", 2, value)}
+              />
             </>
           )}
         </PanelSection>
