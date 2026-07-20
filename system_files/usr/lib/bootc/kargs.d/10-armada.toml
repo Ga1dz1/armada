@@ -7,7 +7,6 @@ kargs = [
     "rhgb",
     "quiet",
     "plymouth.enable=1",
-    "loglevel=3",
 
     "enforcing=0",
 
