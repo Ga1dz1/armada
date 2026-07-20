@@ -214,7 +214,28 @@ def action_restart_gamescope_session(request):
     # Output connector/resolution/rotation are gamescope startup flags (see
     # sessions.d/steam) - applying a new display choice needs the session
     # relaunched, not just the config file rewritten.
-    run(["/usr/libexec/armada/session-control", "switch-gamemode"], timeout=15)
+    #
+    # session-control (the existing switch-desktop/switch-gamemode helper)
+    # was tried here first and confirmed live to do nothing: it only
+    # gracefully ends a session via a session-specific mechanism when
+    # LEAVING that session type (logout_plasma's D-Bus call when leaving
+    # Plasma) - going from gamescope back into gamescope has no such
+    # graceful-exit path, so it fell through to `systemctl restart
+    # sddm.service`, which doesn't touch an already-running autologin'd
+    # session at all: systemd-logind tracks it in its own session-N.scope
+    # cgroup, independent of the sddm.service unit's lifetime. Terminating
+    # the session directly via loginctl is what actually asks logind to end
+    # it; Relogin=true in /etc/sddm.conf.d/armada.conf is what makes SDDM
+    # relaunch it fresh afterward, re-sourcing sessions.d/steam with the
+    # new display choice.
+    result = subprocess.run(
+        ["loginctl", "show-user", "armada", "-p", "Display", "--value"],
+        check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5,
+    )
+    session_id = result.stdout.strip()
+    if not session_id:
+        raise RuntimeError("no active graphical session found for armada")
+    run(["loginctl", "terminate-session", session_id], timeout=15)
     return {"ok": True}
 
 

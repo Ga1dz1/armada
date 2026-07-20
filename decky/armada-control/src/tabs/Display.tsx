@@ -20,20 +20,21 @@ const INTERNAL = "__internal__";
 
 export function Display() {
   const [state, setState] = useState<DisplayState | null>(null);
-  const [message, setMessage] = useState("Loading");
+  const [loadMessage, setLoadMessage] = useState("Loading");
+  const [errorMessage, setErrorMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [restarting, setRestarting] = useState(false);
 
   useEffect(() => {
     getDisplayState()
       .then(setState)
-      .catch((error) => setMessage(String(error)));
+      .catch((error) => setLoadMessage(String(error)));
   }, []);
 
   if (!state) {
     return (
       <PanelSection title="DISPLAY">
-        <Field label={message} />
+        <Field label={loadMessage} />
       </PanelSection>
     );
   }
@@ -58,9 +59,10 @@ export function Display() {
   const persist = (next: Partial<DisplayState>) => {
     const merged = { ...state, ...next };
     setSaving(true);
+    setErrorMessage("");
     setDisplayConfig(merged.useExternal, merged.connector, merged.width, merged.height, merged.orientation)
       .then(setState)
-      .catch((error) => setMessage(String(error)))
+      .catch((error) => setErrorMessage(String(error)))
       .finally(() => setSaving(false));
   };
 
@@ -108,13 +110,22 @@ export function Display() {
       {activeDisconnected && (
         <Field label="This display isn't connected right now - game mode runs on the internal screen until it's plugged back in. Its settings are remembered." />
       )}
+      {errorMessage && <Field label={`Error: ${errorMessage}`} />}
       <div className="armada-reset-row">
         <ButtonItem
           layout="below"
           disabled={restarting}
           onClick={() => {
             setRestarting(true);
-            restartGamescopeSession().catch((error) => setMessage(String(error)));
+            setErrorMessage("");
+            // A successful restart tears down this very session (and Decky
+            // with it), so there's nothing to update on success - only a
+            // failure ever reaches this component again, and the button
+            // must re-enable then or a failed restart looks identical to a
+            // silently-still-in-progress one with no way to retry.
+            restartGamescopeSession()
+              .catch((error) => setErrorMessage(String(error)))
+              .finally(() => setRestarting(false));
           }}
         >
           Apply &amp; Restart Game Mode
