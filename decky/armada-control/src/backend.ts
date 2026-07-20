@@ -17,17 +17,19 @@ export const saveCompatApplied = (appids: string[]) => {
 };
 export const setSshEnabled = (enabled: boolean) => call<[boolean], boolean>("set_ssh_enabled", enabled);
 export const setControllerType = (value: string) => call<[string], string>("set_controller_type", value);
-export const setStickLedColor = (value: string) => call<[string], StickLedState>("set_stick_led_color", value);
-export const setStickLedMode = (mode: string) => call<[string], StickLedState>("set_stick_led_mode", mode);
+export const setStickLedColor = (side: "l" | "r", value: string) =>
+  call<[string, string], StickLedState>("set_stick_led_color", side, value);
+export const setStickLedMode = (side: "l" | "r", mode: string) =>
+  call<[string, string], StickLedState>("set_stick_led_mode", side, mode);
 export const setStickLedScreenLink = (enabled: boolean) => call<[boolean], StickLedState>("set_stick_led_screen_link", enabled);
-export const setStickLedParam = (param: string, mode: string, value: number) =>
-  call<[string, string, number], StickLedState>("set_stick_led_param", param, mode, value);
+export const setStickLedParam = (side: "l" | "r", param: string, mode: string, value: number) =>
+  call<[string, string, string, number], StickLedState>("set_stick_led_param", side, param, mode, value);
 export const setStickLedFlashColor = (button: string, value: string) =>
   call<[string, string], StickLedState>("set_stick_led_flash_color", button, value);
-export const setStickLedDuotoneColor = (slot: "a" | "b", value: string) =>
-  call<[string, string], StickLedState>("set_stick_led_duotone_color", slot, value);
-export const setStickLedDuotoneOrientation = (orientation: string) =>
-  call<[string], StickLedState>("set_stick_led_duotone_orientation", orientation);
+export const setStickLedDuotoneColor = (side: "l" | "r", slot: "a" | "b", value: string) =>
+  call<[string, string, string], StickLedState>("set_stick_led_duotone_color", side, slot, value);
+export const setStickLedDuotoneOrientation = (side: "l" | "r", orientation: string) =>
+  call<[string, string], StickLedState>("set_stick_led_duotone_orientation", side, orientation);
 export const getControllerState = () => call<[], CalibrationState>("get_controller_state");
 export const saveCalibration = (capture: Capture) => call<[Capture], CalibrationState>("save_calibration", capture);
 export const resetCalibration = () => call<[], CalibrationState>("reset_calibration");

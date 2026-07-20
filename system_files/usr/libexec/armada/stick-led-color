@@ -2,6 +2,14 @@
 """Get/set/apply the Retroid Pocket Mini V2 stick RGB (HTR3212, 4 zones per
 stick). Mirrors controller-type's get/set/apply + /etc/armada/*.conf pattern.
 
+Every setting below (mode, color, per-mode tunables, duotone colors/split) is
+independent per stick - the left and right stick can run completely
+different modes at once. Commands that touch one stick's settings take a
+<l|r> argument (set, set-mode, set-param, set-duotone-color,
+set-duotone-orientation). set-screen-link and set-flash-color stay global:
+screen_link is a single brightness-coupling toggle, and flash colors are
+keyed by button (a physical button isn't "on" one stick or the other).
+
 Modes:
   static            - always the saved color.
   breathing         - saved color, pulsing.
@@ -10,25 +18,32 @@ Modes:
   battery-breathing - battery color, pulsing.
   rainbow           - saved color ignored; hue cycles continuously.
   chase             - saved color, a lit zone (with a fading tail) travels
-                       around the 4 zones of each stick.
-  alternating       - saved color, breathing but the left and right sticks
-                       are 180 degrees out of phase (ping-pong).
-  reactive          - saved color ignored; each stick's deflection drives its
-                       own brightness (centered/idle=off, full throw=bright)
-                       and angle drives hue, independently per side. Each
-                       button press triggers a brief flash on both sticks,
-                       in that button's own configurable color (set-flash-
-                       color <button> <RRGGBB>, default white).
+                       around the 4 zones of the stick.
+  alternating       - saved color, breathing offset by a fixed phase (0 on
+                       the left stick, 180 degrees on the right) off a
+                       shared clock - if both sticks are set to it (same
+                       speed), they ping-pong against each other; on just
+                       one stick it's indistinguishable from breathing.
+  reactive          - saved color ignored; the stick's own deflection drives
+                       its brightness (centered/idle=off, full throw=bright)
+                       and angle drives hue. Every button press triggers a
+                       brief flash (in that button's own configurable color,
+                       set-flash-color <button> <RRGGBB>, default white) on
+                       every stick currently in reactive mode.
   multidot          - three fixed-hue dots (red/green/blue) chase each other
-                       around the 4 zones of each stick.
-  ambilight         - saved color ignored; each stick tracks the average
+                       around the 4 zones of the stick.
+  ambilight         - saved color ignored; the stick tracks the average
                        color of a strip near its own side of the screen
                        (sampled off the DRM framebuffer via ffmpeg's
                        kmsgrab), fading smoothly between samples rather
                        than snapping.
+  duotone           - two configurable colors split across the stick's
+                       zones (horizontal/vertical/diagonal, set-duotone-
+                       orientation <l|r> <orientation>, colors via
+                       set-duotone-color <l|r> <a|b> <RRGGBB>).
 
-Per-mode tunables (set-param <param> <mode> <value>), persisted per mode
-(battery-breathing shares breathing's):
+Per-mode tunables (set-param <l|r> <param> <mode> <value>), persisted per
+stick per mode (battery-breathing shares breathing's):
   speed     - animation rate multiplier (0.25-3.0). breathing, chase,
               rainbow, alternating, multidot, ambilight (how fast the color
               chases each new screen sample; the sample rate itself is fixed).
@@ -39,8 +54,8 @@ Per-mode tunables (set-param <param> <mode> <value>), persisted per mode
   size      - how many trailing zones stay lit (1-3). chase, multidot.
 
 `daemon` runs forever (see armada-stick-led.service): idles at IDLE_INTERVAL
-for the static/battery modes (just enough to track battery level), and
-animates at BREATH_INTERVAL for the rest.
+when neither stick is in an animated mode, animates at BREATH_INTERVAL
+whenever either stick is.
 
 screen_link (set-screen-link on|off) scales the final brightness by the
 panel backlight's current/max ratio, independent of mode, so the sticks dim
@@ -76,16 +91,13 @@ BACKLIGHT_BASE = Path("/sys/class/backlight")
 SIDES = ("l", "r")
 ZONES = (1, 2, 3, 4)
 IDLE_INTERVAL = 5.0
-# "duotone" is deliberately left out of any UI's default mode list - it's
-# unlocked by holding the Select+L1+R1 chord (see ComboWatcher below), not
-# picked from a menu. Two colors and a split orientation, same get/set
-# pattern as the other per-mode settings. Zone-to-physical-position mapping
-# (which zone index actually sits where on the ring) is a best guess
-# pending confirmation on real hardware - the three DUOTONE_ZONE_GROUPS
+# "duotone" is a normal mode: two colors and a split orientation, same
+# get/set pattern as the other per-mode settings. Zone-to-physical-position
+# mapping (which zone index actually sits where on the ring) is a best
+# guess pending confirmation on real hardware - the three DUOTONE_ZONE_GROUPS
 # entries assume zones 1-4 sit at NE/SE/SW/NW in that clockwise order
 # (matching chase's sweep direction); adjust the tuples below once a real
 # device confirms or corrects it.
-DUOTONE_FLAG = Path("/etc/armada/stick-led-duotone-unlocked")
 DEFAULT_DUOTONE_COLOR_A = "0050FF"
 DEFAULT_DUOTONE_COLOR_B = "FFD700"
 DEFAULT_DUOTONE_ORIENTATION = "horizontal"
@@ -101,6 +113,10 @@ BASE_BREATH_STEP = (2 * math.pi) / (BREATH_PERIOD_S / BREATH_INTERVAL)  # at spe
 CHASE_ZONES_PER_SEC = 1.5  # at speed=1.0
 MULTIDOT_ZONES_PER_SEC = 1.2  # at speed=1.0
 MULTIDOT_COLORS = ((255, 0, 0), (0, 255, 0), (0, 100, 255))
+# Fixed phase relationship "alternating" gives each side off a shared clock -
+# see the mode's docstring entry above for why this replaces the old
+# both-sides-locked-together implementation now that mode is independent.
+SIDE_PHASE_OFFSET = {"l": 0.0, "r": math.pi}
 
 PARAM_SPECS = {
     "speed": {"min": 0.25, "max": 3.0, "default": 1.0, "modes": ("breathing", "chase", "rainbow", "alternating", "multidot", "ambilight")},
@@ -294,73 +310,6 @@ def stick_reactive_rgb(x, y, floor):
     return tuple(c * 255 * level for c in colorsys.hsv_to_rgb(hue, 1.0, 1.0))
 
 
-# --- duotone unlock chord: raw evdev reader ---------------------------------
-# Raw BTN_* codes for the three-button chord that flips DUOTONE_FLAG. Uses
-# the same non-exclusive open() as ReactiveInput, but stays open across every
-# mode (not just reactive) since the chord has to work regardless of what's
-# currently selected.
-COMBO_CODES = {0x136: "l1", 0x137: "r1", 0x13a: "select"}  # BTN_TL, BTN_TR, BTN_SELECT
-
-
-class ComboWatcher:
-    def __init__(self):
-        self.fd = None
-        self.held = set()
-        self.latched = False
-
-    def ensure_open(self):
-        if self.fd is not None:
-            return True
-        path = gamepad_device_path()
-        if path is None:
-            return False
-        try:
-            fd = os.open(str(path), os.O_RDONLY | os.O_NONBLOCK)
-        except OSError:
-            return False
-        self.fd = fd
-        return True
-
-    def close(self):
-        if self.fd is not None:
-            try:
-                os.close(self.fd)
-            except OSError:
-                pass
-            self.fd = None
-
-    def poll(self):
-        if not self.ensure_open():
-            return
-        try:
-            while select.select([self.fd], [], [], 0)[0]:
-                chunk = os.read(self.fd, INPUT_EVENT_SIZE)
-                if len(chunk) != INPUT_EVENT_SIZE:
-                    break
-                _, _, ev_type, code, value = struct.unpack(INPUT_EVENT_FMT, chunk)
-                if ev_type != EV_KEY or code not in COMBO_CODES:
-                    continue
-                name = COMBO_CODES[code]
-                if value:
-                    self.held.add(name)
-                elif name in self.held:
-                    self.held.discard(name)
-                    self.latched = False
-        except OSError:
-            self.close()
-            return
-        if len(self.held) == len(COMBO_CODES) and not self.latched:
-            self.latched = True
-            try:
-                if DUOTONE_FLAG.exists():
-                    DUOTONE_FLAG.unlink()
-                else:
-                    DUOTONE_FLAG.parent.mkdir(parents=True, exist_ok=True)
-                    DUOTONE_FLAG.touch()
-            except OSError:
-                pass
-
-
 # --- ambilight mode: DRM framebuffer color sampling ------------------------
 # Each stick sits below and to its own side of the panel, not behind the
 # whole screen, so this samples a strip near each screen edge instead of
@@ -433,8 +382,9 @@ class AmbilightSampler:
     here, not the capture itself, so this amortizes that cost across the
     whole time ambilight mode stays selected instead of paying it on every
     single sample. ffmpeg runs at a fixed, modest output rate regardless of
-    the "speed" param; speed instead controls how aggressively the LED color
-    chases each incoming sample (see sample()), which is the more
+    the "speed" param; speed instead controls how aggressively each side's
+    LED color chases its own incoming sample (see sample()) - independent
+    per side since each stick can have its own speed now - which is the more
     perceptually relevant knob for a slow ambient effect like this anyway."""
 
     def __init__(self):
@@ -481,7 +431,7 @@ class AmbilightSampler:
             self.proc = None
         self.buf = b""
 
-    def sample(self, speed):
+    def sample(self, speed_l, speed_r):
         if not self.ensure_open():
             return self.color_l, self.color_r
         try:
@@ -508,59 +458,81 @@ class AmbilightSampler:
         right = _average_region(frame, 2 * g, g, 2 * g, 0, g)
         if left is None or right is None:
             return self.color_l, self.color_r
-        smoothing = min(0.9, AMBILIGHT_SMOOTHING * speed)
-        self.color_l = tuple(c * (1 - smoothing) + t * smoothing for c, t in zip(self.color_l, left))
-        self.color_r = tuple(c * (1 - smoothing) + t * smoothing for c, t in zip(self.color_r, right))
+        smoothing_l = min(0.9, AMBILIGHT_SMOOTHING * speed_l)
+        smoothing_r = min(0.9, AMBILIGHT_SMOOTHING * speed_r)
+        self.color_l = tuple(c * (1 - smoothing_l) + t * smoothing_l for c, t in zip(self.color_l, left))
+        self.color_r = tuple(c * (1 - smoothing_r) + t * smoothing_r for c, t in zip(self.color_r, right))
         return self.color_l, self.color_r
 
 
+def _default_side_state():
+    return {
+        "mode": DEFAULT_MODE,
+        "color": DEFAULT_COLOR,
+        "settings": {},
+        "duotone_color_a": DEFAULT_DUOTONE_COLOR_A,
+        "duotone_color_b": DEFAULT_DUOTONE_COLOR_B,
+        "duotone_orientation": DEFAULT_DUOTONE_ORIENTATION,
+    }
+
+
 def load_state():
-    mode, color, screen_link = DEFAULT_MODE, DEFAULT_COLOR, DEFAULT_SCREEN_LINK
-    duotone_color_a, duotone_color_b, duotone_orientation = DEFAULT_DUOTONE_COLOR_A, DEFAULT_DUOTONE_COLOR_B, DEFAULT_DUOTONE_ORIENTATION
-    settings = {}
-    flash_colors = {}
+    state = {"l": _default_side_state(), "r": _default_side_state(), "screen_link": DEFAULT_SCREEN_LINK, "flash_colors": {}}
     try:
         lines = CONFIG.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
-        return mode, color, screen_link, settings, flash_colors, duotone_color_a, duotone_color_b, duotone_orientation
+        return state
     for line in lines:
         key, sep, raw = line.partition("=")
         if not sep:
             continue
         key, raw = key.strip(), raw.strip()
-        if key == "mode" and raw in MODES:
-            mode = raw
-        elif key == "color" and re.fullmatch(r"[0-9A-Fa-f]{6}", raw or ""):
-            color = raw
-        elif key == "screen_link":
-            screen_link = raw == "1"
-        elif key == "duotone_color_a" and re.fullmatch(r"[0-9A-Fa-f]{6}", raw or ""):
-            duotone_color_a = raw.upper()
-        elif key == "duotone_color_b" and re.fullmatch(r"[0-9A-Fa-f]{6}", raw or ""):
-            duotone_color_b = raw.upper()
-        elif key == "duotone_orientation" and raw in DUOTONE_ORIENTATIONS:
-            duotone_orientation = raw
-        elif key.startswith("flash_") and key[len("flash_"):] in FLASH_BUTTONS:
+        if key == "screen_link":
+            state["screen_link"] = raw == "1"
+            continue
+        if key.startswith("flash_") and key[len("flash_"):] in FLASH_BUTTONS:
             if re.fullmatch(r"[0-9A-Fa-f]{6}", raw or ""):
-                flash_colors[key[len("flash_"):]] = raw.upper()
-        elif "_" in key and key.split("_", 1)[0] in PARAM_SPECS:
+                state["flash_colors"][key[len("flash_"):]] = raw.upper()
+            continue
+        if key.endswith("_l"):
+            side, base = "l", key[:-2]
+        elif key.endswith("_r"):
+            side, base = "r", key[:-2]
+        else:
+            continue
+        s = state[side]
+        if base == "mode" and raw in MODES:
+            s["mode"] = raw
+        elif base == "color" and re.fullmatch(r"[0-9A-Fa-f]{6}", raw or ""):
+            s["color"] = raw
+        elif base == "duotone_color_a" and re.fullmatch(r"[0-9A-Fa-f]{6}", raw or ""):
+            s["duotone_color_a"] = raw.upper()
+        elif base == "duotone_color_b" and re.fullmatch(r"[0-9A-Fa-f]{6}", raw or ""):
+            s["duotone_color_b"] = raw.upper()
+        elif base == "duotone_orientation" and raw in DUOTONE_ORIENTATIONS:
+            s["duotone_orientation"] = raw
+        elif "_" in base and base.split("_", 1)[0] in PARAM_SPECS:
             try:
-                settings[key] = float(raw)
+                s["settings"][base] = float(raw)
             except ValueError:
                 pass
-    return mode, color, screen_link, settings, flash_colors, duotone_color_a, duotone_color_b, duotone_orientation
+    return state
 
 
-def save_state(mode, color, screen_link, settings, flash_colors, duotone_color_a, duotone_color_b, duotone_orientation):
+def save_state(state):
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    lines = [
-        f"mode={mode}", f"color={color}", f"screen_link={'1' if screen_link else '0'}",
-        f"duotone_color_a={duotone_color_a}", f"duotone_color_b={duotone_color_b}", f"duotone_orientation={duotone_orientation}",
-    ]
-    for key in sorted(settings):
-        lines.append(f"{key}={settings[key]:.3f}")
-    for button in sorted(flash_colors):
-        lines.append(f"flash_{button}={flash_colors[button]}")
+    lines = [f"screen_link={'1' if state['screen_link'] else '0'}"]
+    for side in SIDES:
+        s = state[side]
+        lines.append(f"mode_{side}={s['mode']}")
+        lines.append(f"color_{side}={s['color']}")
+        lines.append(f"duotone_color_a_{side}={s['duotone_color_a']}")
+        lines.append(f"duotone_color_b_{side}={s['duotone_color_b']}")
+        lines.append(f"duotone_orientation_{side}={s['duotone_orientation']}")
+        for key in sorted(s["settings"]):
+            lines.append(f"{key}_{side}={s['settings'][key]:.3f}")
+    for button in sorted(state["flash_colors"]):
+        lines.append(f"flash_{button}={state['flash_colors'][button]}")
     tmp = CONFIG.with_name(f".{CONFIG.name}.tmp")
     tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
     tmp.chmod(0o644)
@@ -617,57 +589,54 @@ def apply_side_rgb(side, r, g, b):
     return ok
 
 
-def apply_chase(r, g, b, pos, scale, size, floor):
+def apply_chase(side, r, g, b, pos, scale, size, floor):
     ok = False
-    for side in SIDES:
-        for idx, zone in enumerate(ZONES):
-            dist = abs(idx - pos)
-            dist = min(dist, len(ZONES) - dist)
-            level = floor + (1 - floor) * max(0.0, 1.0 - dist / size)
-            level *= scale
-            if write_zone(side, zone, r * level, g * level, b * level):
-                ok = True
+    for idx, zone in enumerate(ZONES):
+        dist = abs(idx - pos)
+        dist = min(dist, len(ZONES) - dist)
+        level = floor + (1 - floor) * max(0.0, 1.0 - dist / size)
+        level *= scale
+        if write_zone(side, zone, r * level, g * level, b * level):
+            ok = True
     return ok
 
 
-def apply_multidot(base_pos, scale, size, floor):
+def apply_multidot(side, base_pos, scale, size, floor):
     ok = False
     spacing = len(ZONES) / len(MULTIDOT_COLORS)
-    for side in SIDES:
-        totals = [[0.0, 0.0, 0.0] for _ in ZONES]
-        for i, (dr, dg, db) in enumerate(MULTIDOT_COLORS):
-            dot_pos = (base_pos + i * spacing) % len(ZONES)
-            for idx in range(len(ZONES)):
-                dist = abs(idx - dot_pos)
-                dist = min(dist, len(ZONES) - dist)
-                level = floor + (1 - floor) * max(0.0, 1.0 - dist / size)
-                totals[idx][0] += dr * level
-                totals[idx][1] += dg * level
-                totals[idx][2] += db * level
-        for idx, zone in enumerate(ZONES):
-            r, g, b = totals[idx]
-            if write_zone(side, zone, r * scale, g * scale, b * scale):
-                ok = True
+    totals = [[0.0, 0.0, 0.0] for _ in ZONES]
+    for i, (dr, dg, db) in enumerate(MULTIDOT_COLORS):
+        dot_pos = (base_pos + i * spacing) % len(ZONES)
+        for idx in range(len(ZONES)):
+            dist = abs(idx - dot_pos)
+            dist = min(dist, len(ZONES) - dist)
+            level = floor + (1 - floor) * max(0.0, 1.0 - dist / size)
+            totals[idx][0] += dr * level
+            totals[idx][1] += dg * level
+            totals[idx][2] += db * level
+    for idx, zone in enumerate(ZONES):
+        r, g, b = totals[idx]
+        if write_zone(side, zone, r * scale, g * scale, b * scale):
+            ok = True
     return ok
 
 
-def apply_hex(hex_color, scale=1.0):
+def apply_hex(side, hex_color, scale=1.0):
     r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
-    return apply_rgb(r * scale, g * scale, b * scale)
+    return apply_side_rgb(side, r * scale, g * scale, b * scale)
 
 
-def apply_duotone(color_a, color_b, orientation, scale=1.0):
+def apply_duotone(side, color_a, color_b, orientation, scale=1.0):
     ok = False
     ar, ag, ab = int(color_a[0:2], 16), int(color_a[2:4], 16), int(color_a[4:6], 16)
     br, bg, bb = int(color_b[0:2], 16), int(color_b[2:4], 16), int(color_b[4:6], 16)
     zones_a, zones_b = DUOTONE_ZONE_GROUPS.get(orientation, DUOTONE_ZONE_GROUPS[DEFAULT_DUOTONE_ORIENTATION])
-    for side in SIDES:
-        for zone in zones_a:
-            if write_zone(side, zone, ar * scale, ag * scale, ab * scale):
-                ok = True
-        for zone in zones_b:
-            if write_zone(side, zone, br * scale, bg * scale, bb * scale):
-                ok = True
+    for zone in zones_a:
+        if write_zone(side, zone, ar * scale, ag * scale, ab * scale):
+            ok = True
+    for zone in zones_b:
+        if write_zone(side, zone, br * scale, bg * scale, bb * scale):
+            ok = True
     return ok
 
 
@@ -710,115 +679,139 @@ def rainbow_rgb(phase):
 
 
 def apply_current():
-    mode, color, screen_link, _, _, duotone_color_a, duotone_color_b, duotone_orientation = load_state()
-    scale = screen_scale() if screen_link else 1.0
+    state = load_state()
+    scale = screen_scale() if state["screen_link"] else 1.0
+    ok = False
+    for side in SIDES:
+        s = state[side]
+        mode, color = s["mode"], s["color"]
+        if mode == "duotone":
+            if apply_duotone(side, s["duotone_color_a"], s["duotone_color_b"], s["duotone_orientation"], scale):
+                ok = True
+            continue
+        r, g, b = rainbow_rgb(0.0) if mode == "rainbow" else base_rgb(mode, color)
+        if apply_side_rgb(side, r * scale, g * scale, b * scale):
+            ok = True
+    return ok
+
+
+def _new_anim():
+    return {"phase": 0.0, "chase_pos": 0.0, "multidot_pos": 0.0}
+
+
+def render_side_static(side, s, scale):
+    mode, color = s["mode"], s["color"]
     if mode == "duotone":
-        return apply_duotone(duotone_color_a, duotone_color_b, duotone_orientation, scale)
-    r, g, b = rainbow_rgb(0.0) if mode == "rainbow" else base_rgb(mode, color)
-    return apply_rgb(r * scale, g * scale, b * scale)
+        apply_duotone(side, s["duotone_color_a"], s["duotone_color_b"], s["duotone_orientation"], scale)
+    else:
+        r, g, b = base_rgb(mode, color)
+        apply_side_rgb(side, r * scale, g * scale, b * scale)
+
+
+def render_side_animated(side, s, scale, anim, reactive, ambilight_colors, flash_colors):
+    mode, color, settings = s["mode"], s["color"], s["settings"]
+    if mode not in ANIMATED_MODES:
+        render_side_static(side, s, scale)
+        return
+    if mode == "rainbow":
+        r, g, b = rainbow_rgb(anim["phase"])
+        apply_side_rgb(side, r * scale, g * scale, b * scale)
+        anim["phase"] = (anim["phase"] + BASE_BREATH_STEP * get_param(settings, "speed", mode)) % (2 * math.pi)
+    elif mode == "chase":
+        r, g, b = base_rgb(mode, color)
+        size = get_param(settings, "size", mode)
+        floor = get_param(settings, "intensity", mode)
+        apply_chase(side, r, g, b, anim["chase_pos"], scale, size, floor)
+        anim["chase_pos"] = (anim["chase_pos"] + CHASE_ZONES_PER_SEC * get_param(settings, "speed", mode) * BREATH_INTERVAL) % len(ZONES)
+    elif mode == "multidot":
+        size = get_param(settings, "size", mode)
+        floor = get_param(settings, "intensity", mode)
+        apply_multidot(side, anim["multidot_pos"], scale, size, floor)
+        anim["multidot_pos"] = (anim["multidot_pos"] + MULTIDOT_ZONES_PER_SEC * get_param(settings, "speed", mode) * BREATH_INTERVAL) % len(ZONES)
+    elif mode == "alternating":
+        r, g, b = base_rgb(mode, color)
+        floor = get_param(settings, "intensity", mode)
+        level = floor + (1 - floor) * (0.5 + 0.5 * math.sin(anim["phase"] + SIDE_PHASE_OFFSET[side]))
+        apply_side_rgb(side, r * level * scale, g * level * scale, b * level * scale)
+        anim["phase"] = (anim["phase"] + BASE_BREATH_STEP * get_param(settings, "speed", mode)) % (2 * math.pi)
+    elif mode == "reactive":
+        floor = get_param(settings, "intensity", mode)
+        if side == "l":
+            cr, cg, cb = stick_reactive_rgb(reactive.lx, -reactive.ly, floor)
+        else:
+            cr, cg, cb = stick_reactive_rgb(reactive.rx, -reactive.ry, floor)
+        flash = reactive.flash
+        fr, fg, fb = flash_color_rgb(flash_colors, reactive.flash_button)
+        blend = lambda c, f: c * (1 - flash) + f * flash  # noqa: E731
+        apply_side_rgb(side, blend(cr, fr) * scale, blend(cg, fg) * scale, blend(cb, fb) * scale)
+    elif mode == "ambilight":
+        color3 = ambilight_colors[0] if side == "l" else ambilight_colors[1]
+        apply_side_rgb(side, color3[0] * scale, color3[1] * scale, color3[2] * scale)
+    else:
+        r, g, b = base_rgb(mode, color)
+        floor = get_param(settings, "intensity", mode)
+        level = scale * (floor + (1 - floor) * (0.5 + 0.5 * math.sin(anim["phase"])))
+        apply_side_rgb(side, r * level, g * level, b * level)
+        anim["phase"] = (anim["phase"] + BASE_BREATH_STEP * get_param(settings, "speed", mode)) % (2 * math.pi)
 
 
 def run_daemon():
-    phase = 0.0
-    chase_pos = 0.0
-    multidot_pos = 0.0
+    anim = {"l": _new_anim(), "r": _new_anim()}
     reactive = ReactiveInput()
     ambilight = AmbilightSampler()
-    combo = ComboWatcher()
     while True:
-        combo.poll()
         if SUSPEND_FLAG.exists():
             reactive.close()
             ambilight.close()
             apply_rgb(0, 0, 0)
-            phase = chase_pos = multidot_pos = 0.0
+            anim = {"l": _new_anim(), "r": _new_anim()}
             time.sleep(SUSPEND_POLL_INTERVAL)
             continue
-        mode, color, screen_link, settings, flash_colors, duotone_color_a, duotone_color_b, duotone_orientation = load_state()
-        scale = screen_scale() if screen_link else 1.0
-        if mode != "reactive":
+        state = load_state()
+        scale = screen_scale() if state["screen_link"] else 1.0
+        modes = {side: state[side]["mode"] for side in SIDES}
+        used_reactive = "reactive" in modes.values()
+        used_ambilight = "ambilight" in modes.values()
+        if not used_reactive:
             reactive.close()
-        if mode != "ambilight":
+        if not used_ambilight:
             ambilight.close()
-        if mode in ANIMATED_MODES:
-            if mode == "rainbow":
-                r, g, b = rainbow_rgb(phase)
-                apply_rgb(r * scale, g * scale, b * scale)
-                phase = (phase + BASE_BREATH_STEP * get_param(settings, "speed", mode)) % (2 * math.pi)
-            elif mode == "chase":
-                r, g, b = base_rgb(mode, color)
-                size = get_param(settings, "size", mode)
-                floor = get_param(settings, "intensity", mode)
-                apply_chase(r, g, b, chase_pos, scale, size, floor)
-                chase_pos = (chase_pos + CHASE_ZONES_PER_SEC * get_param(settings, "speed", mode) * BREATH_INTERVAL) % len(ZONES)
-            elif mode == "multidot":
-                size = get_param(settings, "size", mode)
-                floor = get_param(settings, "intensity", mode)
-                apply_multidot(multidot_pos, scale, size, floor)
-                multidot_pos = (multidot_pos + MULTIDOT_ZONES_PER_SEC * get_param(settings, "speed", mode) * BREATH_INTERVAL) % len(ZONES)
-            elif mode == "alternating":
-                r, g, b = base_rgb(mode, color)
-                floor = get_param(settings, "intensity", mode)
-                level_l = floor + (1 - floor) * (0.5 + 0.5 * math.sin(phase))
-                level_r = floor + (1 - floor) * (0.5 + 0.5 * math.sin(phase + math.pi))
-                apply_side_rgb("l", r * level_l * scale, g * level_l * scale, b * level_l * scale)
-                apply_side_rgb("r", r * level_r * scale, g * level_r * scale, b * level_r * scale)
-                phase = (phase + BASE_BREATH_STEP * get_param(settings, "speed", mode)) % (2 * math.pi)
-            elif mode == "reactive":
+        any_animated = any(m in ANIMATED_MODES for m in modes.values())
+        if any_animated:
+            if used_reactive:
                 reactive.poll()
-                floor = get_param(settings, "intensity", mode)
-                lr, lg, lb = stick_reactive_rgb(reactive.lx, -reactive.ly, floor)
-                rr, rg, rb = stick_reactive_rgb(reactive.rx, -reactive.ry, floor)
-                flash = reactive.flash
-                fr, fg, fb = flash_color_rgb(flash_colors, reactive.flash_button)
-                blend = lambda c, f: c * (1 - flash) + f * flash  # noqa: E731
-                apply_side_rgb("l", blend(lr, fr) * scale, blend(lg, fg) * scale, blend(lb, fb) * scale)
-                apply_side_rgb("r", blend(rr, fr) * scale, blend(rg, fg) * scale, blend(rb, fb) * scale)
+            ambilight_colors = None
+            if used_ambilight:
+                speed_l = get_param(state["l"]["settings"], "speed", "ambilight")
+                speed_r = get_param(state["r"]["settings"], "speed", "ambilight")
+                ambilight_colors = ambilight.sample(speed_l, speed_r)
+            for side in SIDES:
+                render_side_animated(side, state[side], scale, anim[side], reactive, ambilight_colors, state["flash_colors"])
+            if used_reactive:
                 reactive.tick_decay()
-            elif mode == "ambilight":
-                (lr, lg, lb), (rr, rg, rb) = ambilight.sample(get_param(settings, "speed", mode))
-                apply_side_rgb("l", lr * scale, lg * scale, lb * scale)
-                apply_side_rgb("r", rr * scale, rg * scale, rb * scale)
-            else:
-                r, g, b = base_rgb(mode, color)
-                floor = get_param(settings, "intensity", mode)
-                level = scale * (floor + (1 - floor) * (0.5 + 0.5 * math.sin(phase)))
-                apply_rgb(r * level, g * level, b * level)
-                phase = (phase + BASE_BREATH_STEP * get_param(settings, "speed", mode)) % (2 * math.pi)
             time.sleep(BREATH_INTERVAL)
         else:
-            if mode == "duotone":
-                apply_duotone(duotone_color_a, duotone_color_b, duotone_orientation, scale)
-            else:
-                r, g, b = base_rgb(mode, color)
-                apply_rgb(r * scale, g * scale, b * scale)
-            phase = chase_pos = multidot_pos = 0.0
-            # Chunked instead of one long sleep so the duotone unlock chord
-            # (ComboWatcher, polled each chunk) stays responsive even while
-            # idling in a static mode - IDLE_INTERVAL alone would mean up to
-            # 5s of dead time between chord checks.
-            remaining = IDLE_INTERVAL if not screen_link else BREATH_INTERVAL * 4
-            while remaining > 0:
-                step = min(0.1, remaining)
-                time.sleep(step)
-                combo.poll()
-                remaining -= step
+            for side in SIDES:
+                render_side_static(side, state[side], scale)
+            anim = {"l": _new_anim(), "r": _new_anim()}
+            time.sleep(IDLE_INTERVAL if not state["screen_link"] else BREATH_INTERVAL * 4)
 
 
 def print_state():
-    mode, color, screen_link, settings, flash_colors, duotone_color_a, duotone_color_b, duotone_orientation = load_state()
-    print(f"mode={mode}")
-    print(f"color={color}")
-    print(f"screen_link={'1' if screen_link else '0'}")
-    print(f"duotone_unlocked={'1' if DUOTONE_FLAG.exists() else '0'}")
-    print(f"duotone_color_a={duotone_color_a}")
-    print(f"duotone_color_b={duotone_color_b}")
-    print(f"duotone_orientation={duotone_orientation}")
-    for param in PARAM_SPECS:
-        for m in PARAM_SPECS[param]["modes"]:
-            print(f"{param}_{m}={get_param(settings, param, m):.3f}")
+    state = load_state()
+    print(f"screen_link={'1' if state['screen_link'] else '0'}")
+    for side in SIDES:
+        s = state[side]
+        print(f"mode_{side}={s['mode']}")
+        print(f"color_{side}={s['color']}")
+        print(f"duotone_color_a_{side}={s['duotone_color_a']}")
+        print(f"duotone_color_b_{side}={s['duotone_color_b']}")
+        print(f"duotone_orientation_{side}={s['duotone_orientation']}")
+        for param in PARAM_SPECS:
+            for m in PARAM_SPECS[param]["modes"]:
+                print(f"{param}_{m}_{side}={get_param(s['settings'], param, m):.3f}")
     for button in FLASH_BUTTONS:
-        print(f"flash_{button}={flash_colors.get(button, FLASH_DEFAULT_COLOR)}")
+        print(f"flash_{button}={state['flash_colors'].get(button, FLASH_DEFAULT_COLOR)}")
 
 
 def main(argv):
@@ -827,72 +820,75 @@ def main(argv):
         print_state()
         return 0
     if command == "set":
-        if len(argv) != 3 or not re.fullmatch(r"[0-9A-Fa-f]{6}", argv[2]):
-            print("usage: stick-led-color set <RRGGBB hex>", file=sys.stderr)
+        if len(argv) != 4 or argv[2] not in SIDES or not re.fullmatch(r"[0-9A-Fa-f]{6}", argv[3]):
+            print("usage: stick-led-color set <l|r> <RRGGBB hex>", file=sys.stderr)
             return 2
-        value = argv[2].upper()
-        _, _, screen_link, settings, flash_colors, da, db, dor = load_state()
-        if not apply_hex(value, screen_scale() if screen_link else 1.0):
-            return 1
-        save_state("static", value, screen_link, settings, flash_colors, da, db, dor)
-        return 0
+        side, value = argv[2], argv[3].upper()
+        state = load_state()
+        state[side]["mode"] = "static"
+        state[side]["color"] = value
+        save_state(state)
+        return 0 if apply_current() else 1
     if command == "set-mode":
-        if len(argv) != 3 or argv[2] not in MODES:
-            print(f"usage: stick-led-color set-mode <{'|'.join(MODES)}>", file=sys.stderr)
+        if len(argv) != 4 or argv[2] not in SIDES or argv[3] not in MODES:
+            print(f"usage: stick-led-color set-mode <l|r> <{'|'.join(MODES)}>", file=sys.stderr)
             return 2
-        _, color, screen_link, settings, flash_colors, da, db, dor = load_state()
-        save_state(argv[2], color, screen_link, settings, flash_colors, da, db, dor)
+        side, mode = argv[2], argv[3]
+        state = load_state()
+        state[side]["mode"] = mode
+        save_state(state)
         return 0 if apply_current() else 1
     if command == "set-screen-link":
         if len(argv) != 3 or argv[2] not in ("on", "off"):
             print("usage: stick-led-color set-screen-link <on|off>", file=sys.stderr)
             return 2
-        mode, color, _, settings, flash_colors, da, db, dor = load_state()
-        save_state(mode, color, argv[2] == "on", settings, flash_colors, da, db, dor)
+        state = load_state()
+        state["screen_link"] = argv[2] == "on"
+        save_state(state)
         return 0 if apply_current() else 1
     if command == "set-param":
-        if len(argv) != 5 or argv[2] not in PARAM_SPECS:
-            print(f"usage: stick-led-color set-param <{'|'.join(PARAM_SPECS)}> <mode> <value>", file=sys.stderr)
+        if len(argv) != 6 or argv[2] not in SIDES or argv[3] not in PARAM_SPECS:
+            print(f"usage: stick-led-color set-param <l|r> <{'|'.join(PARAM_SPECS)}> <mode> <value>", file=sys.stderr)
             return 2
-        param, target_mode = argv[2], argv[3]
+        side, param, target_mode = argv[2], argv[3], argv[4]
         key = param_key(param, target_mode)
         if key is None:
             print(f"{param} does not apply to mode {target_mode}", file=sys.stderr)
             return 2
         try:
-            value = clamp_param(param, float(argv[4]))
+            value = clamp_param(param, float(argv[5]))
         except ValueError:
             print("invalid value", file=sys.stderr)
             return 2
-        mode, color, screen_link, settings, flash_colors, da, db, dor = load_state()
-        settings[f"{param}_{key}"] = value
-        save_state(mode, color, screen_link, settings, flash_colors, da, db, dor)
+        state = load_state()
+        state[side]["settings"][f"{param}_{key}"] = value
+        save_state(state)
         return 0
     if command == "set-flash-color":
         if len(argv) != 4 or argv[2] not in FLASH_BUTTONS or not re.fullmatch(r"[0-9A-Fa-f]{6}", argv[3]):
             print(f"usage: stick-led-color set-flash-color <{'|'.join(FLASH_BUTTONS)}> <RRGGBB hex>", file=sys.stderr)
             return 2
-        mode, color, screen_link, settings, flash_colors, da, db, dor = load_state()
-        flash_colors[argv[2]] = argv[3].upper()
-        save_state(mode, color, screen_link, settings, flash_colors, da, db, dor)
+        state = load_state()
+        state["flash_colors"][argv[2]] = argv[3].upper()
+        save_state(state)
         return 0
     if command == "set-duotone-color":
-        if len(argv) != 4 or argv[2] not in ("a", "b") or not re.fullmatch(r"[0-9A-Fa-f]{6}", argv[3]):
-            print("usage: stick-led-color set-duotone-color <a|b> <RRGGBB hex>", file=sys.stderr)
+        if len(argv) != 5 or argv[2] not in SIDES or argv[3] not in ("a", "b") or not re.fullmatch(r"[0-9A-Fa-f]{6}", argv[4]):
+            print("usage: stick-led-color set-duotone-color <l|r> <a|b> <RRGGBB hex>", file=sys.stderr)
             return 2
-        mode, color, screen_link, settings, flash_colors, da, db, dor = load_state()
-        if argv[2] == "a":
-            da = argv[3].upper()
-        else:
-            db = argv[3].upper()
-        save_state(mode, color, screen_link, settings, flash_colors, da, db, dor)
+        side, slot, value = argv[2], argv[3], argv[4].upper()
+        state = load_state()
+        state[side]["duotone_color_a" if slot == "a" else "duotone_color_b"] = value
+        save_state(state)
         return 0 if apply_current() else 1
     if command == "set-duotone-orientation":
-        if len(argv) != 3 or argv[2] not in DUOTONE_ORIENTATIONS:
-            print(f"usage: stick-led-color set-duotone-orientation <{'|'.join(DUOTONE_ORIENTATIONS)}>", file=sys.stderr)
+        if len(argv) != 4 or argv[2] not in SIDES or argv[3] not in DUOTONE_ORIENTATIONS:
+            print(f"usage: stick-led-color set-duotone-orientation <l|r> <{'|'.join(DUOTONE_ORIENTATIONS)}>", file=sys.stderr)
             return 2
-        mode, color, screen_link, settings, flash_colors, da, db, _ = load_state()
-        save_state(mode, color, screen_link, settings, flash_colors, da, db, argv[2])
+        side, orientation = argv[2], argv[3]
+        state = load_state()
+        state[side]["duotone_orientation"] = orientation
+        save_state(state)
         return 0 if apply_current() else 1
     if command == "apply":
         return 0 if apply_current() else 1
@@ -900,9 +896,9 @@ def main(argv):
         run_daemon()
         return 0
     print(
-        "usage: stick-led-color get|set <RRGGBB>|set-mode <mode>|set-screen-link <on|off>"
-        "|set-param <param> <mode> <value>|set-flash-color <button> <RRGGBB>"
-        "|set-duotone-color <a|b> <RRGGBB>|set-duotone-orientation <horizontal|vertical|diagonal>|apply|daemon",
+        "usage: stick-led-color get|set <l|r> <RRGGBB>|set-mode <l|r> <mode>|set-screen-link <on|off>"
+        "|set-param <l|r> <param> <mode> <value>|set-flash-color <button> <RRGGBB>"
+        "|set-duotone-color <l|r> <a|b> <RRGGBB>|set-duotone-orientation <l|r> <horizontal|vertical|diagonal>|apply|daemon",
         file=sys.stderr,
     )
     return 2

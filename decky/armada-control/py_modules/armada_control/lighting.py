@@ -4,6 +4,7 @@ import subprocess
 from .privileged import call
 
 STICK_LED_SCRIPT = "/usr/libexec/armada/stick-led-color"
+STICK_SIDES = ("l", "r")
 STICK_LED_MODES = {"static", "breathing", "battery", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot", "ambilight", "duotone"}
 STICK_LED_PARAMS = ("speed", "intensity", "size")
 FLASH_BUTTONS = (
@@ -28,19 +29,77 @@ def stick_led_supported():
     return Path("/sys/class/leds/l:r1").exists()
 
 
-def _default_state(supported):
+def _default_side_state():
     return {
-        "supported": supported,
         "mode": DEFAULT_MODE,
         "color": DEFAULT_COLOR,
-        "screenLink": DEFAULT_SCREEN_LINK,
-        "duotoneUnlocked": False,
         "duotoneColorA": DEFAULT_DUOTONE_COLOR_A,
         "duotoneColorB": DEFAULT_DUOTONE_COLOR_B,
         "duotoneOrientation": DEFAULT_DUOTONE_ORIENTATION,
         "params": {},
+    }
+
+
+def _default_state(supported):
+    return {
+        "supported": supported,
+        "screenLink": DEFAULT_SCREEN_LINK,
+        "sides": {"l": _default_side_state(), "r": _default_side_state()},
         "flashColors": {},
     }
+
+
+def _coerce_side(raw):
+    raw = raw or {}
+    return {
+        "mode": raw.get("mode") if raw.get("mode") in STICK_LED_MODES else DEFAULT_MODE,
+        "color": str(raw.get("color") or DEFAULT_COLOR),
+        "duotoneColorA": str(raw.get("duotoneColorA") or DEFAULT_DUOTONE_COLOR_A),
+        "duotoneColorB": str(raw.get("duotoneColorB") or DEFAULT_DUOTONE_COLOR_B),
+        "duotoneOrientation": raw.get("duotoneOrientation") if raw.get("duotoneOrientation") in DUOTONE_ORIENTATIONS else DEFAULT_DUOTONE_ORIENTATION,
+        "params": {k: float(v) for k, v in dict(raw.get("params") or {}).items()},
+    }
+
+
+def _parse_cli_output(out):
+    sides = {"l": _default_side_state(), "r": _default_side_state()}
+    screen_link = DEFAULT_SCREEN_LINK
+    flash_colors = {}
+    for line in out.splitlines():
+        key, sep, value = line.partition("=")
+        if not sep:
+            continue
+        key, value = key.strip(), value.strip()
+        if key == "screen_link":
+            screen_link = value == "1"
+            continue
+        if key.startswith("flash_") and key[len("flash_"):] in FLASH_BUTTONS:
+            if re.fullmatch(r"[0-9A-Fa-f]{6}", value or ""):
+                flash_colors[key[len("flash_"):]] = value.upper()
+            continue
+        if key.endswith("_l"):
+            side, base = "l", key[:-2]
+        elif key.endswith("_r"):
+            side, base = "r", key[:-2]
+        else:
+            continue
+        s = sides[side]
+        if base == "mode" and value in STICK_LED_MODES:
+            s["mode"] = value
+        elif base == "color" and re.fullmatch(r"[0-9A-Fa-f]{6}", value or ""):
+            s["color"] = value
+        elif base == "duotone_color_a" and re.fullmatch(r"[0-9A-Fa-f]{6}", value or ""):
+            s["duotoneColorA"] = value.upper()
+        elif base == "duotone_color_b" and re.fullmatch(r"[0-9A-Fa-f]{6}", value or ""):
+            s["duotoneColorB"] = value.upper()
+        elif base == "duotone_orientation" and value in DUOTONE_ORIENTATIONS:
+            s["duotoneOrientation"] = value
+        elif "_" in base and base.split("_", 1)[0] in STICK_LED_PARAMS:
+            try:
+                s["params"][base] = float(value)
+            except ValueError:
+                pass
+    return {"supported": True, "screenLink": screen_link, "sides": sides, "flashColors": flash_colors}
 
 
 def stick_led_state():
@@ -48,88 +107,36 @@ def stick_led_state():
         return _default_state(False)
     try:
         result = call("get_stick_led")
-        mode = str(result.get("mode") or DEFAULT_MODE)
-        color = str(result.get("color") or DEFAULT_COLOR)
-        screen_link = bool(result.get("screen_link"))
-        duotone_unlocked = bool(result.get("duotone_unlocked"))
-        duotone_color_a = str(result.get("duotone_color_a") or DEFAULT_DUOTONE_COLOR_A)
-        duotone_color_b = str(result.get("duotone_color_b") or DEFAULT_DUOTONE_COLOR_B)
-        duotone_orientation = str(result.get("duotone_orientation") or DEFAULT_DUOTONE_ORIENTATION)
-        params = {k: float(v) for k, v in dict(result.get("params") or {}).items()}
-        flash_colors = {k: str(v) for k, v in dict(result.get("flashColors") or {}).items()}
+        return {
+            "supported": True,
+            "screenLink": bool(result.get("screenLink")),
+            "sides": {side: _coerce_side((result.get("sides") or {}).get(side)) for side in STICK_SIDES},
+            "flashColors": {k: str(v) for k, v in dict(result.get("flashColors") or {}).items()},
+        }
     except Exception:
         try:
             out = subprocess.check_output([STICK_LED_SCRIPT, "get"], text=True, timeout=5)
         except (OSError, subprocess.SubprocessError):
             return _default_state(True)
-        mode, color, screen_link, duotone_unlocked = DEFAULT_MODE, DEFAULT_COLOR, DEFAULT_SCREEN_LINK, False
-        duotone_color_a, duotone_color_b, duotone_orientation = DEFAULT_DUOTONE_COLOR_A, DEFAULT_DUOTONE_COLOR_B, DEFAULT_DUOTONE_ORIENTATION
-        params, flash_colors = {}, {}
-        for line in out.splitlines():
-            key, sep, value = line.partition("=")
-            if not sep:
-                continue
-            key, value = key.strip(), value.strip()
-            if key == "mode" and value in STICK_LED_MODES:
-                mode = value
-            elif key == "color" and re.fullmatch(r"[0-9A-Fa-f]{6}", value or ""):
-                color = value
-            elif key == "screen_link":
-                screen_link = value == "1"
-            elif key == "duotone_unlocked":
-                duotone_unlocked = value == "1"
-            elif key == "duotone_color_a" and re.fullmatch(r"[0-9A-Fa-f]{6}", value or ""):
-                duotone_color_a = value.upper()
-            elif key == "duotone_color_b" and re.fullmatch(r"[0-9A-Fa-f]{6}", value or ""):
-                duotone_color_b = value.upper()
-            elif key == "duotone_orientation" and value in DUOTONE_ORIENTATIONS:
-                duotone_orientation = value
-            elif key.startswith("flash_") and key[len("flash_"):] in FLASH_BUTTONS:
-                if re.fullmatch(r"[0-9A-Fa-f]{6}", value or ""):
-                    flash_colors[key[len("flash_"):]] = value.upper()
-            elif "_" in key and key.split("_", 1)[0] in STICK_LED_PARAMS:
-                try:
-                    params[key] = float(value)
-                except ValueError:
-                    pass
-        return {
-            "supported": True,
-            "mode": mode,
-            "color": color,
-            "screenLink": screen_link,
-            "duotoneUnlocked": duotone_unlocked,
-            "duotoneColorA": duotone_color_a,
-            "duotoneColorB": duotone_color_b,
-            "duotoneOrientation": duotone_orientation,
-            "params": params,
-            "flashColors": flash_colors,
-        }
-    return {
-        "supported": True,
-        "mode": mode if mode in STICK_LED_MODES else DEFAULT_MODE,
-        "color": color,
-        "screenLink": screen_link,
-        "duotoneUnlocked": duotone_unlocked,
-        "duotoneColorA": duotone_color_a,
-        "duotoneColorB": duotone_color_b,
-        "duotoneOrientation": duotone_orientation if duotone_orientation in DUOTONE_ORIENTATIONS else DEFAULT_DUOTONE_ORIENTATION,
-        "params": params,
-        "flashColors": flash_colors,
-    }
+        return _parse_cli_output(out)
 
 
-def set_stick_led_color(value):
+def set_stick_led_color(side, value):
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
     value = str(value).lstrip("#")
     if not re.fullmatch(r"[0-9A-Fa-f]{6}", value):
         raise ValueError("invalid color")
-    call("set_stick_led_color", value=value.upper())
+    call("set_stick_led_color", side=side, value=value.upper())
     return stick_led_state()
 
 
-def set_stick_led_mode(mode):
+def set_stick_led_mode(side, mode):
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
     if mode not in STICK_LED_MODES:
         raise ValueError("invalid stick led mode")
-    call("set_stick_led_mode", mode=mode)
+    call("set_stick_led_mode", side=side, mode=mode)
     return stick_led_state()
 
 
@@ -138,10 +145,12 @@ def set_stick_led_screen_link(enabled):
     return stick_led_state()
 
 
-def set_stick_led_param(param, mode, value):
+def set_stick_led_param(side, param, mode, value):
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
     if param not in STICK_LED_PARAMS:
         raise ValueError("invalid stick led param")
-    call("set_stick_led_param", param=param, mode=mode, value=float(value))
+    call("set_stick_led_param", side=side, param=param, mode=mode, value=float(value))
     return stick_led_state()
 
 
@@ -155,18 +164,22 @@ def set_stick_led_flash_color(button, value):
     return stick_led_state()
 
 
-def set_stick_led_duotone_color(slot, value):
+def set_stick_led_duotone_color(side, slot, value):
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
     if slot not in ("a", "b"):
         raise ValueError("invalid duotone color slot")
     value = str(value).lstrip("#")
     if not re.fullmatch(r"[0-9A-Fa-f]{6}", value):
         raise ValueError("invalid color")
-    call("set_stick_led_duotone_color", slot=slot, value=value.upper())
+    call("set_stick_led_duotone_color", side=side, slot=slot, value=value.upper())
     return stick_led_state()
 
 
-def set_stick_led_duotone_orientation(orientation):
+def set_stick_led_duotone_orientation(side, orientation):
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
     if orientation not in DUOTONE_ORIENTATIONS:
         raise ValueError("invalid duotone orientation")
-    call("set_stick_led_duotone_orientation", orientation=orientation)
+    call("set_stick_led_duotone_orientation", side=side, orientation=orientation)
     return stick_led_state()

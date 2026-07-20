@@ -52,26 +52,26 @@ class Plugin:
     async def set_controller_type(self, value):
         return await asyncio.to_thread(set_controller_type, value)
 
-    async def set_stick_led_color(self, value):
-        return await asyncio.to_thread(set_stick_led_color, value)
+    async def set_stick_led_color(self, side, value):
+        return await asyncio.to_thread(set_stick_led_color, side, value)
 
-    async def set_stick_led_mode(self, mode):
-        return await asyncio.to_thread(set_stick_led_mode, mode)
+    async def set_stick_led_mode(self, side, mode):
+        return await asyncio.to_thread(set_stick_led_mode, side, mode)
 
     async def set_stick_led_screen_link(self, enabled):
         return await asyncio.to_thread(set_stick_led_screen_link, enabled)
 
-    async def set_stick_led_param(self, param, mode, value):
-        return await asyncio.to_thread(set_stick_led_param, param, mode, value)
+    async def set_stick_led_param(self, side, param, mode, value):
+        return await asyncio.to_thread(set_stick_led_param, side, param, mode, value)
 
     async def set_stick_led_flash_color(self, button, value):
         return await asyncio.to_thread(set_stick_led_flash_color, button, value)
 
-    async def set_stick_led_duotone_color(self, slot, value):
-        return await asyncio.to_thread(set_stick_led_duotone_color, slot, value)
+    async def set_stick_led_duotone_color(self, side, slot, value):
+        return await asyncio.to_thread(set_stick_led_duotone_color, side, slot, value)
 
-    async def set_stick_led_duotone_orientation(self, orientation):
-        return await asyncio.to_thread(set_stick_led_duotone_orientation, orientation)
+    async def set_stick_led_duotone_orientation(self, side, orientation):
+        return await asyncio.to_thread(set_stick_led_duotone_orientation, side, orientation)
 
     async def get_controller_state(self):
         return await asyncio.to_thread(controller_state)

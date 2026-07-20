@@ -14,7 +14,7 @@ import {
 } from "../backend";
 import { openCalibration } from "../components/Calibration";
 import { SelectEdit, SliderEdit, ToggleRow } from "../components/widgets";
-import type { Config } from "../types";
+import type { Config, StickLedSideState, StickLedState } from "../types";
 
 const PRESET_COLORS: { label: string; value: string }[] = [
   { label: "Blue", value: "0050FF" },
@@ -34,6 +34,15 @@ function rgbToHex(r: number, g: number, b: number): string {
   return [clamp(r), clamp(g), clamp(b)].map((n) => n.toString(16).padStart(2, "0")).join("").toUpperCase();
 }
 
+function patchSide(stickLed: StickLedState, side: "l" | "r", patch: Partial<StickLedSideState>): StickLedState {
+  return { ...stickLed, sides: { ...stickLed.sides, [side]: { ...stickLed.sides[side], ...patch } } };
+}
+
+const SIDE_OPTIONS: { data: string; label: string }[] = [
+  { data: "l", label: "Left Stick" },
+  { data: "r", label: "Right Stick" },
+];
+
 const MODE_OPTIONS: { data: string; label: string }[] = [
   { data: "static", label: "Static" },
   { data: "breathing", label: "Breathing" },
@@ -41,10 +50,11 @@ const MODE_OPTIONS: { data: string; label: string }[] = [
   { data: "battery-breathing", label: "Battery + Breathing" },
   { data: "rainbow", label: "Rainbow" },
   { data: "chase", label: "Chase" },
-  { data: "alternating", label: "Alternating (L/R)" },
+  { data: "alternating", label: "Alternating" },
   { data: "reactive", label: "Reactive (sticks + buttons)" },
   { data: "multidot", label: "Multidot (RGB chase)" },
   { data: "ambilight", label: "Ambilight (matches screen)" },
+  { data: "duotone", label: "Duotone (two-color split)" },
 ];
 const COLOR_VISIBLE_MODES = new Set(["static", "breathing", "chase", "alternating"]);
 
@@ -139,21 +149,20 @@ export function Settings({ config, setConfig }: {
   const [colorsExpanded, setColorsExpanded] = useState(false);
   const [flashExpanded, setFlashExpanded] = useState(false);
   const [flashButton, setFlashButton] = useState("south");
+  const [selectedSide, setSelectedSide] = useState<"l" | "r">("l");
   const stickLed = config.stickLed;
-  const mode = stickLed?.mode || "static";
-  // "duotone" stays out of the list until unlocked (Select+L1+R1 held
-  // together, see ComboWatcher in stick-led-color) - not a normal preset,
-  // so it doesn't get a spot in the default menu.
-  const modeOptions = stickLed?.duotoneUnlocked ? [...MODE_OPTIONS, { data: "duotone", label: "Duotone" }] : MODE_OPTIONS;
+  const sideState = stickLed?.sides?.[selectedSide];
+  const mode = sideState?.mode || "static";
+
   const setStickLedMode = async (nextMode: string) => {
     if (!stickLed) return;
-    const previous = stickLed.mode;
-    setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, mode: nextMode } } : current));
+    const previous = mode;
+    setConfig((current) => (current ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { mode: nextMode }) } : current));
     try {
-      const applied = await applyStickLedMode(nextMode);
+      const applied = await applyStickLedMode(selectedSide, nextMode);
       setConfig((current) => (current ? { ...current, stickLed: applied } : current));
     } catch (error) {
-      setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, mode: previous } } : current));
+      setConfig((current) => (current ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { mode: previous }) } : current));
     }
   };
   const setStickLedScreenLink = async (value: boolean) => {
@@ -168,19 +177,21 @@ export function Settings({ config, setConfig }: {
     }
   };
   const setStickLedColor = async (hex: string) => {
-    if (!stickLed) return;
-    const previous = stickLed.color;
-    setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, mode: "static", color: hex } } : current));
+    if (!stickLed || !sideState) return;
+    const previous = sideState.color;
+    setConfig((current) =>
+      current ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { mode: "static", color: hex }) } : current,
+    );
     try {
-      const applied = await applyStickLedColor(hex);
+      const applied = await applyStickLedColor(selectedSide, hex);
       setConfig((current) => (current ? { ...current, stickLed: applied } : current));
     } catch (error) {
-      setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, color: previous } } : current));
+      setConfig((current) => (current ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { color: previous }) } : current));
     }
   };
   const setStickLedChannel = (channel: 0 | 1 | 2, value: number) => {
-    if (!stickLed) return;
-    const rgb = hexToRgb(stickLed.color);
+    if (!sideState) return;
+    const rgb = hexToRgb(sideState.color);
     rgb[channel] = value;
     void setStickLedColor(rgbToHex(rgb[0], rgb[1], rgb[2]));
   };
@@ -210,49 +221,57 @@ export function Settings({ config, setConfig }: {
     void setStickLedFlashColor(rgbToHex(rgb[0], rgb[1], rgb[2]));
   };
   const setStickLedParam = async (param: string, backendValue: number) => {
-    if (!stickLed) return;
+    if (!stickLed || !sideState) return;
     const effectiveMode = aliasMode(mode);
     const key = `${param}_${effectiveMode}`;
-    const previous = stickLed.params[key];
+    const previous = sideState.params[key];
     setConfig((current) =>
-      current ? { ...current, stickLed: { ...current.stickLed, params: { ...current.stickLed.params, [key]: backendValue } } } : current,
+      current
+        ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { params: { ...current.stickLed.sides[selectedSide].params, [key]: backendValue } }) }
+        : current,
     );
     try {
-      const applied = await applyStickLedParam(param, effectiveMode, backendValue);
+      const applied = await applyStickLedParam(selectedSide, param, effectiveMode, backendValue);
       setConfig((current) => (current ? { ...current, stickLed: applied } : current));
     } catch (error) {
       setConfig((current) =>
-        current ? { ...current, stickLed: { ...current.stickLed, params: { ...current.stickLed.params, [key]: previous } } } : current,
+        current
+          ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { params: { ...current.stickLed.sides[selectedSide].params, [key]: previous } }) }
+          : current,
       );
     }
   };
   const setStickLedDuotoneColor = async (slot: "a" | "b", hex: string) => {
-    if (!stickLed) return;
+    if (!stickLed || !sideState) return;
     const field = slot === "a" ? "duotoneColorA" : "duotoneColorB";
-    const previous = stickLed[field];
-    setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, [field]: hex } } : current));
+    const previous = sideState[field];
+    setConfig((current) => (current ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { [field]: hex }) } : current));
     try {
-      const applied = await applyStickLedDuotoneColor(slot, hex);
+      const applied = await applyStickLedDuotoneColor(selectedSide, slot, hex);
       setConfig((current) => (current ? { ...current, stickLed: applied } : current));
     } catch (error) {
-      setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, [field]: previous } } : current));
+      setConfig((current) => (current ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { [field]: previous }) } : current));
     }
   };
   const setDuotoneChannel = (slot: "a" | "b", channel: 0 | 1 | 2, value: number) => {
-    if (!stickLed) return;
-    const rgb = hexToRgb(slot === "a" ? stickLed.duotoneColorA : stickLed.duotoneColorB);
+    if (!sideState) return;
+    const rgb = hexToRgb(slot === "a" ? sideState.duotoneColorA : sideState.duotoneColorB);
     rgb[channel] = value;
     void setStickLedDuotoneColor(slot, rgbToHex(rgb[0], rgb[1], rgb[2]));
   };
   const setStickLedDuotoneOrientation = async (orientation: string) => {
-    if (!stickLed) return;
-    const previous = stickLed.duotoneOrientation;
-    setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, duotoneOrientation: orientation } } : current));
+    if (!stickLed || !sideState) return;
+    const previous = sideState.duotoneOrientation;
+    setConfig((current) =>
+      current ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { duotoneOrientation: orientation }) } : current,
+    );
     try {
-      const applied = await applyStickLedDuotoneOrientation(orientation);
+      const applied = await applyStickLedDuotoneOrientation(selectedSide, orientation);
       setConfig((current) => (current ? { ...current, stickLed: applied } : current));
     } catch (error) {
-      setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, duotoneOrientation: previous } } : current));
+      setConfig((current) =>
+        current ? { ...current, stickLed: patchSide(current.stickLed, selectedSide, { duotoneOrientation: previous }) } : current,
+      );
     }
   };
   return (
@@ -266,14 +285,15 @@ export function Settings({ config, setConfig }: {
         />
         <ButtonItem layout="below" onClick={openCalibration}>Launch Calibration</ButtonItem>
       </PanelSection>
-      {stickLed?.supported && (
+      {stickLed?.supported && sideState && (
         <PanelSection title="Stick Lighting">
-          <SelectEdit label="Mode" value={mode} options={modeOptions} onChange={setStickLedMode} />
+          <SelectEdit label="Stick" value={selectedSide} options={SIDE_OPTIONS} onChange={(value) => setSelectedSide(value as "l" | "r")} />
+          <SelectEdit label="Mode" value={mode} options={MODE_OPTIONS} onChange={setStickLedMode} />
           {Object.entries(PARAM_UI)
             .filter(([, spec]) => spec.modes.has(aliasMode(mode)))
             .map(([param, spec]) => {
               const key = `${param}_${aliasMode(mode)}`;
-              const raw = stickLed.params[key] ?? PARAM_DEFAULTS[param];
+              const raw = sideState.params[key] ?? PARAM_DEFAULTS[param];
               return (
                 <SliderEdit
                   key={param}
@@ -288,7 +308,7 @@ export function Settings({ config, setConfig }: {
             })}
           <ToggleRow
             label="Follow screen brightness"
-            description="Dim the sticks along with the display backlight"
+            description="Dim both sticks along with the display backlight"
             value={!!stickLed.screenLink}
             onChange={setStickLedScreenLink}
           />
@@ -306,7 +326,7 @@ export function Settings({ config, setConfig }: {
                   ))}
                   <SliderEdit
                     label="Red"
-                    value={hexToRgb(stickLed.color)[0]}
+                    value={hexToRgb(sideState.color)[0]}
                     min={0}
                     max={255}
                     step={1}
@@ -314,7 +334,7 @@ export function Settings({ config, setConfig }: {
                   />
                   <SliderEdit
                     label="Green"
-                    value={hexToRgb(stickLed.color)[1]}
+                    value={hexToRgb(sideState.color)[1]}
                     min={0}
                     max={255}
                     step={1}
@@ -322,7 +342,7 @@ export function Settings({ config, setConfig }: {
                   />
                   <SliderEdit
                     label="Blue"
-                    value={hexToRgb(stickLed.color)[2]}
+                    value={hexToRgb(sideState.color)[2]}
                     min={0}
                     max={255}
                     step={1}
@@ -377,14 +397,14 @@ export function Settings({ config, setConfig }: {
             <>
               <SelectEdit
                 label="Split"
-                value={stickLed.duotoneOrientation || "horizontal"}
+                value={sideState.duotoneOrientation || "horizontal"}
                 options={DUOTONE_ORIENTATION_OPTIONS}
                 onChange={setStickLedDuotoneOrientation}
               />
               <Field label="Color A" />
               <SliderEdit
                 label="A: Red"
-                value={hexToRgb(stickLed.duotoneColorA)[0]}
+                value={hexToRgb(sideState.duotoneColorA)[0]}
                 min={0}
                 max={255}
                 step={1}
@@ -392,7 +412,7 @@ export function Settings({ config, setConfig }: {
               />
               <SliderEdit
                 label="A: Green"
-                value={hexToRgb(stickLed.duotoneColorA)[1]}
+                value={hexToRgb(sideState.duotoneColorA)[1]}
                 min={0}
                 max={255}
                 step={1}
@@ -400,7 +420,7 @@ export function Settings({ config, setConfig }: {
               />
               <SliderEdit
                 label="A: Blue"
-                value={hexToRgb(stickLed.duotoneColorA)[2]}
+                value={hexToRgb(sideState.duotoneColorA)[2]}
                 min={0}
                 max={255}
                 step={1}
@@ -409,7 +429,7 @@ export function Settings({ config, setConfig }: {
               <Field label="Color B" />
               <SliderEdit
                 label="B: Red"
-                value={hexToRgb(stickLed.duotoneColorB)[0]}
+                value={hexToRgb(sideState.duotoneColorB)[0]}
                 min={0}
                 max={255}
                 step={1}
@@ -417,7 +437,7 @@ export function Settings({ config, setConfig }: {
               />
               <SliderEdit
                 label="B: Green"
-                value={hexToRgb(stickLed.duotoneColorB)[1]}
+                value={hexToRgb(sideState.duotoneColorB)[1]}
                 min={0}
                 max={255}
                 step={1}
@@ -425,7 +445,7 @@ export function Settings({ config, setConfig }: {
               />
               <SliderEdit
                 label="B: Blue"
-                value={hexToRgb(stickLed.duotoneColorB)[2]}
+                value={hexToRgb(sideState.duotoneColorB)[2]}
                 min={0}
                 max={255}
                 step={1}

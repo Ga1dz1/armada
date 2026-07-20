@@ -70,16 +70,19 @@ export interface GameRef {
   name: string;
 }
 
-export interface StickLedState {
-  supported: boolean;
+export interface StickLedSideState {
   mode: string;
   color: string;
-  screenLink: boolean;
-  duotoneUnlocked: boolean;
   duotoneColorA: string;
   duotoneColorB: string;
   duotoneOrientation: string;
   params: Record<string, number>;
+}
+
+export interface StickLedState {
+  supported: boolean;
+  screenLink: boolean;
+  sides: { l: StickLedSideState; r: StickLedSideState };
   flashColors: Record<string, string>;
 }
 

@@ -108,19 +108,43 @@ def action_get_controller_type(request):
     return {"value": result}
 
 
+STICK_SIDES = ("l", "r")
+STICK_LED_MODES = ("static", "breathing", "battery", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot", "ambilight", "duotone")
+DUOTONE_ORIENTATIONS = ("horizontal", "vertical", "diagonal")
+STICK_LED_PARAM_MODES = {
+    "speed": {"breathing", "chase", "rainbow", "alternating", "multidot", "ambilight"},
+    "intensity": {"breathing", "alternating", "chase", "multidot", "reactive"},
+    "size": {"chase", "multidot"},
+}
+STICK_LED_PARAMS = ("speed", "intensity", "size")
+FLASH_BUTTONS = (
+    "south", "east", "north", "west",
+    "l1", "r1", "l3", "r3", "l4", "r4",
+    "start", "select",
+    "dpad_up", "dpad_down", "dpad_left", "dpad_right",
+    "other",
+)
+
+
 def action_set_stick_led_color(request):
+    side = str(request.get("side", ""))
     value = str(request.get("value", ""))
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
     if not re.fullmatch(r"[0-9A-Fa-f]{6}", value):
         raise ValueError("invalid color")
-    run(["/usr/libexec/armada/stick-led-color", "set", value], timeout=5)
+    run(["/usr/libexec/armada/stick-led-color", "set", side, value], timeout=5)
     return _stick_led_state()
 
 
 def action_set_stick_led_mode(request):
+    side = str(request.get("side", ""))
     mode = str(request.get("mode", ""))
-    if mode not in ("static", "breathing", "battery", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot", "ambilight", "duotone"):
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
+    if mode not in STICK_LED_MODES:
         raise ValueError("invalid stick led mode")
-    run(["/usr/libexec/armada/stick-led-color", "set-mode", mode], timeout=5)
+    run(["/usr/libexec/armada/stick-led-color", "set-mode", side, mode], timeout=5)
     return _stick_led_state()
 
 
@@ -130,16 +154,12 @@ def action_set_stick_led_screen_link(request):
     return _stick_led_state()
 
 
-STICK_LED_PARAM_MODES = {
-    "speed": {"breathing", "chase", "rainbow", "alternating", "multidot", "ambilight"},
-    "intensity": {"breathing", "alternating", "chase", "multidot", "reactive"},
-    "size": {"chase", "multidot"},
-}
-
-
 def action_set_stick_led_param(request):
+    side = str(request.get("side", ""))
     param = str(request.get("param", ""))
     mode = str(request.get("mode", ""))
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
     allowed = STICK_LED_PARAM_MODES.get(param)
     if not allowed or mode not in allowed:
         raise ValueError("invalid stick led param/mode")
@@ -147,22 +167,12 @@ def action_set_stick_led_param(request):
         value = float(request.get("value"))
     except (TypeError, ValueError):
         raise ValueError("invalid stick led param value")
-    run(["/usr/libexec/armada/stick-led-color", "set-param", param, mode, str(value)], timeout=5)
+    run(["/usr/libexec/armada/stick-led-color", "set-param", side, param, mode, str(value)], timeout=5)
     return _stick_led_state()
 
 
 def action_get_stick_led(request):
     return _stick_led_state()
-
-
-STICK_LED_PARAMS = ("speed", "intensity", "size")
-FLASH_BUTTONS = (
-    "south", "east", "north", "west",
-    "l1", "r1", "l3", "r3", "l4", "r4",
-    "start", "select",
-    "dpad_up", "dpad_down", "dpad_left", "dpad_right",
-    "other",
-)
 
 
 def action_set_stick_led_flash_color(request):
@@ -176,52 +186,72 @@ def action_set_stick_led_flash_color(request):
     return _stick_led_state()
 
 
-DUOTONE_ORIENTATIONS = ("horizontal", "vertical", "diagonal")
-
-
 def action_set_stick_led_duotone_color(request):
+    side = str(request.get("side", ""))
     slot = str(request.get("slot", ""))
     value = str(request.get("value", ""))
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
     if slot not in ("a", "b"):
         raise ValueError("invalid duotone color slot")
     if not re.fullmatch(r"[0-9A-Fa-f]{6}", value):
         raise ValueError("invalid color")
-    run(["/usr/libexec/armada/stick-led-color", "set-duotone-color", slot, value.upper()], timeout=5)
+    run(["/usr/libexec/armada/stick-led-color", "set-duotone-color", side, slot, value.upper()], timeout=5)
     return _stick_led_state()
 
 
 def action_set_stick_led_duotone_orientation(request):
+    side = str(request.get("side", ""))
     orientation = str(request.get("orientation", ""))
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
     if orientation not in DUOTONE_ORIENTATIONS:
         raise ValueError("invalid duotone orientation")
-    run(["/usr/libexec/armada/stick-led-color", "set-duotone-orientation", orientation], timeout=5)
+    run(["/usr/libexec/armada/stick-led-color", "set-duotone-orientation", side, orientation], timeout=5)
     return _stick_led_state()
+
+
+def _default_stick_side_state():
+    return {"mode": "static", "color": "0050FF", "duotoneColorA": "0050FF", "duotoneColorB": "FFD700", "duotoneOrientation": "horizontal", "params": {}}
 
 
 def _stick_led_state():
     result = subprocess.check_output(["/usr/libexec/armada/stick-led-color", "get"], text=True, timeout=5)
-    state = {
-        "mode": "static", "color": "0050FF", "screen_link": "0", "duotone_unlocked": "0",
-        "duotone_color_a": "0050FF", "duotone_color_b": "FFD700", "duotone_orientation": "horizontal",
-        "params": {}, "flashColors": {},
-    }
+    state = {"screenLink": False, "sides": {"l": _default_stick_side_state(), "r": _default_stick_side_state()}, "flashColors": {}}
     for line in result.splitlines():
         key, sep, value = line.partition("=")
         if not sep:
             continue
         key, value = key.strip(), value.strip()
-        if key in ("mode", "color", "screen_link", "duotone_unlocked", "duotone_color_a", "duotone_color_b", "duotone_orientation"):
-            state[key] = value
-        elif key.startswith("flash_") and key[len("flash_"):] in FLASH_BUTTONS:
+        if key == "screen_link":
+            state["screenLink"] = value == "1"
+            continue
+        if key.startswith("flash_") and key[len("flash_"):] in FLASH_BUTTONS:
             if re.fullmatch(r"[0-9A-Fa-f]{6}", value or ""):
                 state["flashColors"][key[len("flash_"):]] = value.upper()
-        elif "_" in key and key.split("_", 1)[0] in STICK_LED_PARAMS:
+            continue
+        if key.endswith("_l"):
+            side, base = "l", key[:-2]
+        elif key.endswith("_r"):
+            side, base = "r", key[:-2]
+        else:
+            continue
+        s = state["sides"][side]
+        if base == "mode":
+            s["mode"] = value
+        elif base == "color":
+            s["color"] = value
+        elif base == "duotone_color_a":
+            s["duotoneColorA"] = value
+        elif base == "duotone_color_b":
+            s["duotoneColorB"] = value
+        elif base == "duotone_orientation":
+            s["duotoneOrientation"] = value
+        elif "_" in base and base.split("_", 1)[0] in STICK_LED_PARAMS:
             try:
-                state["params"][key] = float(value)
+                s["params"][base] = float(value)
             except ValueError:
                 pass
-    state["screen_link"] = state["screen_link"] == "1"
-    state["duotone_unlocked"] = state["duotone_unlocked"] == "1"
     return state
 
 
