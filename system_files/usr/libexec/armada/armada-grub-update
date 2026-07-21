@@ -27,11 +27,15 @@ BOOTROOT="${BOOTROOT:-/boot}"
 ESP="${ESP:-/boot/efi}"
 
 eval "$(/usr/libexec/armada/device-env 2>/dev/null)" || true
+# SM8250 always boots through GRUB (see the ABL comment above) - stage it
+# unconditionally rather than gating on whether EFI/BOOT/BOOTAA64.EFI
+# already exists. That existence check used to guard this script too, but
+# armada-installer's internal-storage install always mkfs's the ESP from
+# scratch right before calling this, so the file can never pre-exist there
+# - the guard silently skipped writing both the EFI binary and grub.cfg on
+# every eMMC install, leaving a formatted-but-empty ESP (confirmed live:
+# device shows no bootable GRUB after an internal-storage install).
 [[ "${ARMADA_SOC_CLASS:-}" == SM8250 ]] || exit 0
-
-# Nothing to refresh if GRUB was never staged here (a non-SM8250 image, or
-# an SM8250 image built without KEEP_GRUB).
-[[ -f "${ESP}/EFI/BOOT/BOOTAA64.EFI" ]] || exit 0
 
 model=$(tr -d '\0' </sys/firmware/devicetree/base/model 2>/dev/null)
 [[ -n $model ]] || { echo "armada-grub-update: could not read this device's model from devicetree" >&2; exit 1; }
