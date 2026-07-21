@@ -11,7 +11,9 @@ from armada_control.config import build_config
 from armada_control.controller import set_controller_type
 from armada_control.display import display_state, restart_gamescope_session, set_display_config
 from armada_control.lighting import (
+    set_stick_led_charging_indicator,
     set_stick_led_color,
+    set_stick_led_color_source,
     set_stick_led_duotone_color,
     set_stick_led_duotone_orientation,
     set_stick_led_flash_color,
@@ -73,6 +75,12 @@ class Plugin:
 
     async def set_stick_led_duotone_orientation(self, side, orientation):
         return await asyncio.to_thread(set_stick_led_duotone_orientation, side, orientation)
+
+    async def set_stick_led_color_source(self, side, source):
+        return await asyncio.to_thread(set_stick_led_color_source, side, source)
+
+    async def set_stick_led_charging_indicator(self, side, enabled):
+        return await asyncio.to_thread(set_stick_led_charging_indicator, side, enabled)
 
     async def get_display_state(self):
         return await asyncio.to_thread(display_state)

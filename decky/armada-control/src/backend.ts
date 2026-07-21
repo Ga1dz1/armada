@@ -30,6 +30,10 @@ export const setStickLedDuotoneColor = (side: "l" | "r", slot: "a" | "b", value:
   call<[string, string, string], StickLedState>("set_stick_led_duotone_color", side, slot, value);
 export const setStickLedDuotoneOrientation = (side: "l" | "r", orientation: string) =>
   call<[string, string], StickLedState>("set_stick_led_duotone_orientation", side, orientation);
+export const setStickLedColorSource = (side: "l" | "r", source: string) =>
+  call<[string, string], StickLedState>("set_stick_led_color_source", side, source);
+export const setStickLedChargingIndicator = (side: "l" | "r", enabled: boolean) =>
+  call<[string, boolean], StickLedState>("set_stick_led_charging_indicator", side, enabled);
 export const getControllerState = () => call<[], CalibrationState>("get_controller_state");
 export const saveCalibration = (capture: Capture) => call<[Capture], CalibrationState>("save_calibration", capture);
 export const resetCalibration = () => call<[], CalibrationState>("reset_calibration");

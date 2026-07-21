@@ -236,11 +236,12 @@ def action_get_controller_type(request):
 
 
 STICK_SIDES = ("l", "r")
-STICK_LED_MODES = ("static", "breathing", "battery", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot", "ambilight", "duotone")
+STICK_LED_MODES = ("static", "breathing", "rainbow", "chase", "spin", "reactive", "multidot", "ambilight", "duotone")
+STICK_LED_COLOR_SOURCES = ("static", "battery")
 DUOTONE_ORIENTATIONS = ("horizontal", "vertical", "diagonal")
 STICK_LED_PARAM_MODES = {
-    "speed": {"breathing", "chase", "rainbow", "alternating", "multidot", "ambilight"},
-    "intensity": {"breathing", "alternating", "chase", "multidot", "reactive"},
+    "speed": {"breathing", "chase", "spin", "rainbow", "multidot", "ambilight"},
+    "intensity": {"breathing", "chase", "spin", "multidot", "reactive"},
     "size": {"chase", "multidot"},
 }
 STICK_LED_PARAMS = ("speed", "intensity", "size")
@@ -298,6 +299,26 @@ def action_set_stick_led_param(request):
     return _stick_led_state()
 
 
+def action_set_stick_led_color_source(request):
+    side = str(request.get("side", ""))
+    source = str(request.get("source", ""))
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
+    if source not in STICK_LED_COLOR_SOURCES:
+        raise ValueError("invalid stick led color source")
+    run(["/usr/libexec/armada/stick-led-color", "set-color-source", side, source], timeout=5)
+    return _stick_led_state()
+
+
+def action_set_stick_led_charging_indicator(request):
+    side = str(request.get("side", ""))
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
+    enabled = bool(request.get("enabled"))
+    run(["/usr/libexec/armada/stick-led-color", "set-charging-indicator", side, "on" if enabled else "off"], timeout=5)
+    return _stick_led_state()
+
+
 def action_get_stick_led(request):
     return _stick_led_state()
 
@@ -339,7 +360,16 @@ def action_set_stick_led_duotone_orientation(request):
 
 
 def _default_stick_side_state():
-    return {"mode": "static", "color": "0050FF", "duotoneColorA": "0050FF", "duotoneColorB": "FFD700", "duotoneOrientation": "horizontal", "params": {}}
+    return {
+        "mode": "static",
+        "color": "0050FF",
+        "colorSource": "static",
+        "chargingIndicator": True,
+        "duotoneColorA": "0050FF",
+        "duotoneColorB": "FFD700",
+        "duotoneOrientation": "horizontal",
+        "params": {},
+    }
 
 
 def _stick_led_state():
@@ -368,6 +398,10 @@ def _stick_led_state():
             s["mode"] = value
         elif base == "color":
             s["color"] = value
+        elif base == "color_source":
+            s["colorSource"] = value
+        elif base == "charging_indicator":
+            s["chargingIndicator"] = value == "1"
         elif base == "duotone_color_a":
             s["duotoneColorA"] = value
         elif base == "duotone_color_b":
@@ -443,6 +477,8 @@ ACTIONS = {
     "set_stick_led_flash_color": action_set_stick_led_flash_color,
     "set_stick_led_duotone_color": action_set_stick_led_duotone_color,
     "set_stick_led_duotone_orientation": action_set_stick_led_duotone_orientation,
+    "set_stick_led_color_source": action_set_stick_led_color_source,
+    "set_stick_led_charging_indicator": action_set_stick_led_charging_indicator,
     "list_displays": action_list_displays,
     "get_display_config": action_get_display_config,
     "set_display_config": action_set_display_config,

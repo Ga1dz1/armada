@@ -5,7 +5,8 @@ from .privileged import call
 
 STICK_LED_SCRIPT = "/usr/libexec/armada/stick-led-color"
 STICK_SIDES = ("l", "r")
-STICK_LED_MODES = {"static", "breathing", "battery", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot", "ambilight", "duotone"}
+STICK_LED_MODES = {"static", "breathing", "rainbow", "chase", "spin", "reactive", "multidot", "ambilight", "duotone"}
+STICK_LED_COLOR_SOURCES = {"static", "battery"}
 STICK_LED_PARAMS = ("speed", "intensity", "size")
 FLASH_BUTTONS = (
     "south", "east", "north", "west",
@@ -16,6 +17,8 @@ FLASH_BUTTONS = (
 )
 DEFAULT_COLOR = "0050FF"
 DEFAULT_MODE = "static"
+DEFAULT_COLOR_SOURCE = "static"
+DEFAULT_CHARGING_INDICATOR = True
 DEFAULT_SCREEN_LINK = False
 DEFAULT_DUOTONE_COLOR_A = "0050FF"
 DEFAULT_DUOTONE_COLOR_B = "FFD700"
@@ -33,6 +36,8 @@ def _default_side_state():
     return {
         "mode": DEFAULT_MODE,
         "color": DEFAULT_COLOR,
+        "colorSource": DEFAULT_COLOR_SOURCE,
+        "chargingIndicator": DEFAULT_CHARGING_INDICATOR,
         "duotoneColorA": DEFAULT_DUOTONE_COLOR_A,
         "duotoneColorB": DEFAULT_DUOTONE_COLOR_B,
         "duotoneOrientation": DEFAULT_DUOTONE_ORIENTATION,
@@ -54,6 +59,8 @@ def _coerce_side(raw):
     return {
         "mode": raw.get("mode") if raw.get("mode") in STICK_LED_MODES else DEFAULT_MODE,
         "color": str(raw.get("color") or DEFAULT_COLOR),
+        "colorSource": raw.get("colorSource") if raw.get("colorSource") in STICK_LED_COLOR_SOURCES else DEFAULT_COLOR_SOURCE,
+        "chargingIndicator": bool(raw.get("chargingIndicator", DEFAULT_CHARGING_INDICATOR)),
         "duotoneColorA": str(raw.get("duotoneColorA") or DEFAULT_DUOTONE_COLOR_A),
         "duotoneColorB": str(raw.get("duotoneColorB") or DEFAULT_DUOTONE_COLOR_B),
         "duotoneOrientation": raw.get("duotoneOrientation") if raw.get("duotoneOrientation") in DUOTONE_ORIENTATIONS else DEFAULT_DUOTONE_ORIENTATION,
@@ -88,6 +95,10 @@ def _parse_cli_output(out):
             s["mode"] = value
         elif base == "color" and re.fullmatch(r"[0-9A-Fa-f]{6}", value or ""):
             s["color"] = value
+        elif base == "color_source" and value in STICK_LED_COLOR_SOURCES:
+            s["colorSource"] = value
+        elif base == "charging_indicator":
+            s["chargingIndicator"] = value == "1"
         elif base == "duotone_color_a" and re.fullmatch(r"[0-9A-Fa-f]{6}", value or ""):
             s["duotoneColorA"] = value.upper()
         elif base == "duotone_color_b" and re.fullmatch(r"[0-9A-Fa-f]{6}", value or ""):
@@ -182,4 +193,20 @@ def set_stick_led_duotone_orientation(side, orientation):
     if orientation not in DUOTONE_ORIENTATIONS:
         raise ValueError("invalid duotone orientation")
     call("set_stick_led_duotone_orientation", side=side, orientation=orientation)
+    return stick_led_state()
+
+
+def set_stick_led_color_source(side, source):
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
+    if source not in STICK_LED_COLOR_SOURCES:
+        raise ValueError("invalid stick led color source")
+    call("set_stick_led_color_source", side=side, source=source)
+    return stick_led_state()
+
+
+def set_stick_led_charging_indicator(side, enabled):
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
+    call("set_stick_led_charging_indicator", side=side, enabled=bool(enabled))
     return stick_led_state()

@@ -73,6 +73,8 @@ export interface GameRef {
 export interface StickLedSideState {
   mode: string;
   color: string;
+  colorSource: string;
+  chargingIndicator: boolean;
   duotoneColorA: string;
   duotoneColorB: string;
   duotoneOrientation: string;

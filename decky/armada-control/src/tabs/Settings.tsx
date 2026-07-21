@@ -4,7 +4,9 @@ import type { Dispatch, SetStateAction } from "react";
 import {
   setControllerType as applyControllerType,
   setSshEnabled as applySshEnabled,
+  setStickLedChargingIndicator as applyStickLedChargingIndicator,
   setStickLedColor as applyStickLedColor,
+  setStickLedColorSource as applyStickLedColorSource,
   setStickLedDuotoneColor as applyStickLedDuotoneColor,
   setStickLedDuotoneOrientation as applyStickLedDuotoneOrientation,
   setStickLedFlashColor as applyStickLedFlashColor,
@@ -46,17 +48,19 @@ const SIDE_OPTIONS: { data: string; label: string }[] = [
 const MODE_OPTIONS: { data: string; label: string }[] = [
   { data: "static", label: "Static" },
   { data: "breathing", label: "Breathing" },
-  { data: "battery", label: "Battery" },
-  { data: "battery-breathing", label: "Battery + Breathing" },
   { data: "rainbow", label: "Rainbow" },
   { data: "chase", label: "Chase" },
-  { data: "alternating", label: "Alternating" },
+  { data: "spin", label: "Spin" },
   { data: "reactive", label: "Reactive (sticks + buttons)" },
   { data: "multidot", label: "Multidot (RGB chase)" },
   { data: "ambilight", label: "Ambilight (matches screen)" },
   { data: "duotone", label: "Duotone (two-color split)" },
 ];
-const COLOR_VISIBLE_MODES = new Set(["static", "breathing", "chase", "alternating"]);
+const COLOR_VISIBLE_MODES = new Set(["static", "breathing", "chase", "spin"]);
+const COLOR_SOURCE_OPTIONS: { data: string; label: string }[] = [
+  { data: "static", label: "Custom color" },
+  { data: "battery", label: "Battery level" },
+];
 
 const DUOTONE_ORIENTATION_OPTIONS: { data: string; label: string }[] = [
   { data: "horizontal", label: "Horizontal" },
@@ -85,17 +89,13 @@ const FLASH_BUTTON_OPTIONS: { data: string; label: string }[] = [
 ];
 const DEFAULT_FLASH_COLOR = "FFFFFF";
 
-function aliasMode(mode: string): string {
-  return mode === "battery-breathing" ? "breathing" : mode;
-}
-
 const PARAM_UI: Record<string, { label: string; min: number; max: number; step: number; modes: Set<string>; toBackend: (v: number) => number; fromBackend: (v: number) => number }> = {
   speed: {
     label: "Speed",
     min: 25,
     max: 300,
     step: 25,
-    modes: new Set(["breathing", "chase", "rainbow", "alternating", "multidot", "ambilight"]),
+    modes: new Set(["breathing", "chase", "rainbow", "spin", "multidot", "ambilight"]),
     toBackend: (v) => v / 100,
     fromBackend: (v) => Math.round(v * 100),
   },
@@ -104,7 +104,7 @@ const PARAM_UI: Record<string, { label: string; min: number; max: number; step: 
     min: 0,
     max: 50,
     step: 5,
-    modes: new Set(["breathing", "alternating", "chase", "multidot", "reactive"]),
+    modes: new Set(["breathing", "spin", "chase", "multidot", "reactive"]),
     toBackend: (v) => v / 100,
     fromBackend: (v) => Math.round(v * 100),
   },
@@ -252,7 +252,7 @@ export function Settings({ config, setConfig }: {
   };
   const setStickLedParam = async (param: string, backendValue: number) => {
     if (!stickLed || !sideState) return;
-    const effectiveMode = aliasMode(mode);
+    const effectiveMode = mode;
     const key = `${param}_${effectiveMode}`;
     const sides = targetSides;
     const previous = sides.map((s) => stickLed.sides[s].params[key]);
@@ -328,6 +328,52 @@ export function Settings({ config, setConfig }: {
       });
     }
   };
+  const setStickLedColorSource = async (source: string) => {
+    if (!stickLed || !sideState) return;
+    const sides = targetSides;
+    const previous = sides.map((s) => stickLed.sides[s].colorSource);
+    setConfig((current) => {
+      if (!current) return current;
+      let sl = current.stickLed;
+      for (const s of sides) sl = patchSide(sl, s, { colorSource: source });
+      return { ...current, stickLed: sl };
+    });
+    try {
+      let applied = stickLed;
+      for (const s of sides) applied = await applyStickLedColorSource(s, source);
+      setConfig((current) => (current ? { ...current, stickLed: applied } : current));
+    } catch (error) {
+      setConfig((current) => {
+        if (!current) return current;
+        let sl = current.stickLed;
+        sides.forEach((s, i) => { sl = patchSide(sl, s, { colorSource: previous[i] }); });
+        return { ...current, stickLed: sl };
+      });
+    }
+  };
+  const setStickLedChargingIndicator = async (value: boolean) => {
+    if (!stickLed || !sideState) return;
+    const sides = targetSides;
+    const previous = sides.map((s) => stickLed.sides[s].chargingIndicator);
+    setConfig((current) => {
+      if (!current) return current;
+      let sl = current.stickLed;
+      for (const s of sides) sl = patchSide(sl, s, { chargingIndicator: value });
+      return { ...current, stickLed: sl };
+    });
+    try {
+      let applied = stickLed;
+      for (const s of sides) applied = await applyStickLedChargingIndicator(s, value);
+      setConfig((current) => (current ? { ...current, stickLed: applied } : current));
+    } catch (error) {
+      setConfig((current) => {
+        if (!current) return current;
+        let sl = current.stickLed;
+        sides.forEach((s, i) => { sl = patchSide(sl, s, { chargingIndicator: previous[i] }); });
+        return { ...current, stickLed: sl };
+      });
+    }
+  };
   return (
     <>
       <PanelSection title="Controller">
@@ -352,9 +398,9 @@ export function Settings({ config, setConfig }: {
           )}
           <SelectEdit label="Mode" value={mode} options={MODE_OPTIONS} onChange={setStickLedMode} />
           {Object.entries(PARAM_UI)
-            .filter(([, spec]) => spec.modes.has(aliasMode(mode)))
+            .filter(([, spec]) => spec.modes.has(mode))
             .map(([param, spec]) => {
-              const key = `${param}_${aliasMode(mode)}`;
+              const key = `${param}_${mode}`;
               const raw = sideState.params[key] ?? PARAM_DEFAULTS[param];
               return (
                 <SliderEdit
@@ -375,6 +421,24 @@ export function Settings({ config, setConfig }: {
             onChange={setStickLedScreenLink}
           />
           {COLOR_VISIBLE_MODES.has(mode) && (
+            <>
+              <SelectEdit
+                label="Color Source"
+                value={sideState.colorSource || "static"}
+                options={COLOR_SOURCE_OPTIONS}
+                onChange={setStickLedColorSource}
+              />
+              {sideState.colorSource === "battery" && (
+                <ToggleRow
+                  label="Charging indicator"
+                  description="Spin a blue dot around the stick while charging"
+                  value={sideState.chargingIndicator}
+                  onChange={setStickLedChargingIndicator}
+                />
+              )}
+            </>
+          )}
+          {COLOR_VISIBLE_MODES.has(mode) && sideState.colorSource !== "battery" && (
             <>
               <ButtonItem layout="below" onClick={() => setColorsExpanded((expanded) => !expanded)}>
                 {colorsExpanded ? "Hide colors ▲" : "Show colors ▼"}

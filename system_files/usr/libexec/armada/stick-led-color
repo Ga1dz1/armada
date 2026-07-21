@@ -11,19 +11,16 @@ screen_link is a single brightness-coupling toggle, and flash colors are
 keyed by button (a physical button isn't "on" one stick or the other).
 
 Modes:
-  static            - always the saved color.
-  breathing         - saved color, pulsing.
-  battery           - color interpolated from current battery capacity (red
-                       -> yellow -> green), full green while charging.
-  battery-breathing - battery color, pulsing.
+  static            - always the saved color (or the battery color - see
+                       color_source below).
+  breathing         - same color, pulsing.
   rainbow           - saved color ignored; hue cycles continuously.
-  chase             - saved color, a lit zone (with a fading tail) travels
+  chase             - same color, a lit zone (with a fading tail) travels
                        around the 4 zones of the stick.
-  alternating       - saved color, breathing offset by a fixed phase (0 on
-                       the left stick, 180 degrees on the right) off a
-                       shared clock - if both sticks are set to it (same
-                       speed), they ping-pong against each other; on just
-                       one stick it's indistinguishable from breathing.
+  spin              - same color, ONE zone lit at full brightness (no
+                       fading tail), the rest at the intensity floor,
+                       stepping around the 4 zones - a hard-edged single
+                       dot rather than chase's soft trailing one.
   reactive          - saved color ignored; the stick's own deflection drives
                        its brightness (centered/idle=off, full throw=bright)
                        and angle drives hue. Every button press triggers a
@@ -42,15 +39,34 @@ Modes:
                        orientation <l|r> <orientation>, colors via
                        set-duotone-color <l|r> <a|b> <RRGGBB>).
 
+color_source (set-color-source <l|r> <static|battery>) - what "the saved
+color" actually is, for every mode above that has one (everything except
+rainbow/reactive/ambilight/multidot/duotone, which generate their own):
+  static  - the color set via `set`/set-flash-color-style RRGGBB hex.
+  battery - interpolated from current battery capacity: red at 20% and
+            below, yellow at 60%, green at 100%, gradient between those
+            anchors, quantized to 5% steps so ordinary capacity-reading
+            jitter doesn't visibly flicker the color. While actually
+            charging (not just "Full"), a single zone lights solid blue
+            and steps around the stick once per second, overlaid on top
+            of whatever the battery-color render already put there -
+            toggle with set-charging-indicator <l|r> <on|off>.
+
+(Removed: the old dedicated "battery"/"battery-breathing" modes - color_source
+now applies to any mode, and the old "alternating" mode, which lost its
+reason to exist once each stick's mode became independently configurable:
+its whole point was a phase relationship between the two sticks, which
+doesn't mean anything if they're not both running it.)
+
 Per-mode tunables (set-param <l|r> <param> <mode> <value>), persisted per
-stick per mode (battery-breathing shares breathing's):
-  speed     - animation rate multiplier (0.25-3.0). breathing, chase,
-              rainbow, alternating, multidot, ambilight (how fast the color
-              chases each new screen sample; the sample rate itself is fixed).
-  intensity - how dim the "low point" gets (0.0-0.5): the breathing/
-              alternating trough, and the base brightness of chase/multidot's
-              unlit zones and reactive's brightness right past its deadzone.
-              Higher = less contrast between lit and unlit.
+stick per mode:
+  speed     - animation rate multiplier (0.25-3.0). breathing, chase, spin,
+              rainbow, multidot, ambilight (how fast the color chases each
+              new screen sample; the sample rate itself is fixed).
+  intensity - how dim the "low point" gets (0.0-0.5): the breathing trough,
+              and the base brightness of chase/spin/multidot's unlit zones
+              and reactive's brightness right past its deadzone. Higher =
+              less contrast between lit and unlit.
   size      - how many trailing zones stay lit (1-3). chase, multidot.
 
 `daemon` runs forever (see armada-stick-led.service): idles at IDLE_INTERVAL
@@ -83,8 +99,11 @@ SUSPEND_POLL_INTERVAL = 0.5
 DEFAULT_COLOR = "0050FF"
 DEFAULT_MODE = "static"
 DEFAULT_SCREEN_LINK = False
-MODES = ("static", "breathing", "battery", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot", "ambilight", "duotone")
-ANIMATED_MODES = ("breathing", "battery-breathing", "rainbow", "chase", "alternating", "reactive", "multidot", "ambilight")
+DEFAULT_COLOR_SOURCE = "static"
+DEFAULT_CHARGING_INDICATOR = True
+COLOR_SOURCES = ("static", "battery")
+MODES = ("static", "breathing", "rainbow", "chase", "spin", "reactive", "multidot", "ambilight", "duotone")
+ANIMATED_MODES = ("breathing", "rainbow", "chase", "spin", "reactive", "multidot", "ambilight")
 LED_BASE = Path("/sys/class/leds")
 POWER_SUPPLY_BASE = Path("/sys/class/power_supply")
 BACKLIGHT_BASE = Path("/sys/class/backlight")
@@ -111,28 +130,33 @@ BREATH_INTERVAL = 0.05
 BREATH_PERIOD_S = 3.5
 BASE_BREATH_STEP = (2 * math.pi) / (BREATH_PERIOD_S / BREATH_INTERVAL)  # at speed=1.0
 CHASE_ZONES_PER_SEC = 1.5  # at speed=1.0
+SPIN_ZONES_PER_SEC = 1.0  # at speed=1.0 - matches the charging indicator's fixed 1 rev/sec
 MULTIDOT_ZONES_PER_SEC = 1.2  # at speed=1.0
 MULTIDOT_COLORS = ((255, 0, 0), (0, 255, 0), (0, 100, 255))
-# Fixed phase relationship "alternating" gives each side off a shared clock -
-# see the mode's docstring entry above for why this replaces the old
-# both-sides-locked-together implementation now that mode is independent.
-SIDE_PHASE_OFFSET = {"l": 0.0, "r": math.pi}
+# The charging indicator's rotation is a fixed 1 rev/sec (not user-adjustable
+# the way spin mode's own speed param is) - it's a status glance, not a
+# decorative animation.
+CHARGING_DOT_ZONES_PER_SEC = 1.0
+CHARGING_DOT_COLOR = (0, 0, 255)
+# Battery-color gradient anchors (see color_source's docstring entry above):
+# solid red at/below this...
+BATTERY_RED_MAX_PCT = 20
+# ...gradient to yellow at this...
+BATTERY_YELLOW_PCT = 60
+# ...gradient to solid green at 100%. Quantized to steps this wide so
+# ordinary capacity-reading jitter doesn't visibly flicker the color.
+BATTERY_GRADIENT_STEP_PCT = 5
 
 PARAM_SPECS = {
-    "speed": {"min": 0.25, "max": 3.0, "default": 1.0, "modes": ("breathing", "chase", "rainbow", "alternating", "multidot", "ambilight")},
-    "intensity": {"min": 0.0, "max": 0.5, "default": 0.15, "modes": ("breathing", "alternating", "chase", "multidot", "reactive")},
+    "speed": {"min": 0.25, "max": 3.0, "default": 1.0, "modes": ("breathing", "chase", "spin", "rainbow", "multidot", "ambilight")},
+    "intensity": {"min": 0.0, "max": 0.5, "default": 0.15, "modes": ("breathing", "chase", "spin", "multidot", "reactive")},
     "size": {"min": 1, "max": 3, "default": 2, "modes": ("chase", "multidot")},
 }
 
 
-def alias_mode(mode):
-    return "breathing" if mode == "battery-breathing" else mode
-
-
 def param_key(param, mode):
     spec = PARAM_SPECS[param]
-    m = alias_mode(mode)
-    return m if m in spec["modes"] else None
+    return mode if mode in spec["modes"] else None
 
 
 def get_param(settings, param, mode):
@@ -469,6 +493,8 @@ def _default_side_state():
     return {
         "mode": DEFAULT_MODE,
         "color": DEFAULT_COLOR,
+        "color_source": DEFAULT_COLOR_SOURCE,
+        "charging_indicator": DEFAULT_CHARGING_INDICATOR,
         "settings": {},
         "duotone_color_a": DEFAULT_DUOTONE_COLOR_A,
         "duotone_color_b": DEFAULT_DUOTONE_COLOR_B,
@@ -501,10 +527,26 @@ def load_state():
         else:
             continue
         s = state[side]
-        if base == "mode" and raw in MODES:
-            s["mode"] = raw
+        if base == "mode":
+            if raw in MODES:
+                s["mode"] = raw
+            # Migrate configs saved before color_source existed - battery
+            # coloring used to be its own mode instead of a source any mode
+            # can use, and alternating had no direct replacement once modes
+            # became independent per side (see the docstring's Removed
+            # note), so it just falls back to the default (static).
+            elif raw == "battery":
+                s["mode"] = "static"
+                s["color_source"] = "battery"
+            elif raw == "battery-breathing":
+                s["mode"] = "breathing"
+                s["color_source"] = "battery"
         elif base == "color" and re.fullmatch(r"[0-9A-Fa-f]{6}", raw or ""):
             s["color"] = raw
+        elif base == "color_source" and raw in COLOR_SOURCES:
+            s["color_source"] = raw
+        elif base == "charging_indicator":
+            s["charging_indicator"] = raw == "1"
         elif base == "duotone_color_a" and re.fullmatch(r"[0-9A-Fa-f]{6}", raw or ""):
             s["duotone_color_a"] = raw.upper()
         elif base == "duotone_color_b" and re.fullmatch(r"[0-9A-Fa-f]{6}", raw or ""):
@@ -526,6 +568,8 @@ def save_state(state):
         s = state[side]
         lines.append(f"mode_{side}={s['mode']}")
         lines.append(f"color_{side}={s['color']}")
+        lines.append(f"color_source_{side}={s['color_source']}")
+        lines.append(f"charging_indicator_{side}={'1' if s['charging_indicator'] else '0'}")
         lines.append(f"duotone_color_a_{side}={s['duotone_color_a']}")
         lines.append(f"duotone_color_b_{side}={s['duotone_color_b']}")
         lines.append(f"duotone_orientation_{side}={s['duotone_orientation']}")
@@ -601,6 +645,29 @@ def apply_chase(side, r, g, b, pos, scale, size, floor):
     return ok
 
 
+def apply_spin(side, r, g, b, pos, scale, floor):
+    ok = False
+    lit_idx = int(round(pos)) % len(ZONES)
+    for idx, zone in enumerate(ZONES):
+        level = (1.0 if idx == lit_idx else floor) * scale
+        if write_zone(side, zone, r * level, g * level, b * level):
+            ok = True
+    return ok
+
+
+def apply_charging_dot(side, scale):
+    # Overlays ON TOP of whatever the side's normal render just wrote -
+    # only the one zone currently "lit" changes, the other three are left
+    # exactly as the base render (battery-color static/breathing/chase/
+    # spin/etc.) put them. Position derived straight from wall-clock time
+    # (not the daemon's own per-side anim state) so it stays a steady,
+    # predictable 1 rev/sec regardless of which mode is doing the base
+    # render or how fast that mode's own animation is going.
+    zone_idx = int(time.time() * CHARGING_DOT_ZONES_PER_SEC * len(ZONES)) % len(ZONES)
+    r, g, b = CHARGING_DOT_COLOR
+    write_zone(side, ZONES[zone_idx], r * scale, g * scale, b * scale)
+
+
 def apply_multidot(side, base_pos, scale, size, floor):
     ok = False
     spacing = len(ZONES) / len(MULTIDOT_COLORS)
@@ -640,8 +707,7 @@ def apply_duotone(side, color_a, color_b, orientation, scale=1.0):
     return ok
 
 
-def battery_rgb():
-    best = None
+def battery_capacity_status():
     for supply in POWER_SUPPLY_BASE.glob("*"):
         try:
             if (supply / "type").read_text().strip() != "Battery":
@@ -650,26 +716,35 @@ def battery_rgb():
             status = (supply / "status").read_text().strip()
         except (OSError, ValueError):
             continue
-        best = (capacity, status)
-        break
-    if best is None:
+        return capacity, status
+    return None, None
+
+
+def battery_gradient_rgb(capacity):
+    if capacity is None:
         return 0, 80, 255  # no battery info - fall back to the default blue
-    capacity, status = best
-    if status == "Charging" or status == "Full":
-        return 0, 200, 0
     capacity = max(0, min(100, capacity))
-    if capacity >= 50:
-        # green (50%) -> yellow (75%)
-        t = (capacity - 50) / 50
-        return int(255 * (1 - t)), 200, 0
-    # yellow (50%) -> red (0%)
-    t = capacity / 50
-    return 255, int(200 * t), 0
+    # Quantized so ordinary capacity-reading jitter doesn't visibly flicker
+    # the color - see BATTERY_GRADIENT_STEP_PCT's own comment.
+    step = round(capacity / BATTERY_GRADIENT_STEP_PCT) * BATTERY_GRADIENT_STEP_PCT
+    if step <= BATTERY_RED_MAX_PCT:
+        return 255, 0, 0
+    if step <= BATTERY_YELLOW_PCT:
+        t = (step - BATTERY_RED_MAX_PCT) / (BATTERY_YELLOW_PCT - BATTERY_RED_MAX_PCT)
+        return 255, int(255 * t), 0
+    t = (step - BATTERY_YELLOW_PCT) / (100 - BATTERY_YELLOW_PCT)
+    return int(255 * (1 - t)), 255, 0
 
 
-def base_rgb(mode, color):
-    if mode in ("battery", "battery-breathing"):
-        return battery_rgb()
+def is_charging():
+    _, status = battery_capacity_status()
+    return status == "Charging"
+
+
+def base_rgb(color, color_source):
+    if color_source == "battery":
+        capacity, _ = battery_capacity_status()
+        return battery_gradient_rgb(capacity)
     return int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
 
 
@@ -681,17 +756,20 @@ def rainbow_rgb(phase):
 def apply_current():
     state = load_state()
     scale = screen_scale() if state["screen_link"] else 1.0
+    charging = is_charging()
     ok = False
     for side in SIDES:
         s = state[side]
-        mode, color = s["mode"], s["color"]
+        mode, color, color_source = s["mode"], s["color"], s["color_source"]
         if mode == "duotone":
             if apply_duotone(side, s["duotone_color_a"], s["duotone_color_b"], s["duotone_orientation"], scale):
                 ok = True
             continue
-        r, g, b = rainbow_rgb(0.0) if mode == "rainbow" else base_rgb(mode, color)
+        r, g, b = rainbow_rgb(0.0) if mode == "rainbow" else base_rgb(color, color_source)
         if apply_side_rgb(side, r * scale, g * scale, b * scale):
             ok = True
+        if color_source == "battery" and charging and s["charging_indicator"]:
+            apply_charging_dot(side, scale)
     return ok
 
 
@@ -699,41 +777,46 @@ def _new_anim():
     return {"phase": 0.0, "chase_pos": 0.0, "multidot_pos": 0.0}
 
 
-def render_side_static(side, s, scale):
-    mode, color = s["mode"], s["color"]
+def _maybe_charging_dot(side, s, scale, charging):
+    if s["color_source"] == "battery" and charging and s["charging_indicator"]:
+        apply_charging_dot(side, scale)
+
+
+def render_side_static(side, s, scale, charging=None):
+    mode, color, color_source = s["mode"], s["color"], s["color_source"]
     if mode == "duotone":
         apply_duotone(side, s["duotone_color_a"], s["duotone_color_b"], s["duotone_orientation"], scale)
-    else:
-        r, g, b = base_rgb(mode, color)
-        apply_side_rgb(side, r * scale, g * scale, b * scale)
+        return
+    r, g, b = base_rgb(color, color_source)
+    apply_side_rgb(side, r * scale, g * scale, b * scale)
+    _maybe_charging_dot(side, s, scale, charging if charging is not None else is_charging())
 
 
-def render_side_animated(side, s, scale, anim, reactive, ambilight_colors, flash_colors):
-    mode, color, settings = s["mode"], s["color"], s["settings"]
+def render_side_animated(side, s, scale, anim, reactive, ambilight_colors, flash_colors, charging):
+    mode, color, color_source, settings = s["mode"], s["color"], s["color_source"], s["settings"]
     if mode not in ANIMATED_MODES:
-        render_side_static(side, s, scale)
+        render_side_static(side, s, scale, charging)
         return
     if mode == "rainbow":
         r, g, b = rainbow_rgb(anim["phase"])
         apply_side_rgb(side, r * scale, g * scale, b * scale)
         anim["phase"] = (anim["phase"] + BASE_BREATH_STEP * get_param(settings, "speed", mode)) % (2 * math.pi)
     elif mode == "chase":
-        r, g, b = base_rgb(mode, color)
+        r, g, b = base_rgb(color, color_source)
         size = get_param(settings, "size", mode)
         floor = get_param(settings, "intensity", mode)
         apply_chase(side, r, g, b, anim["chase_pos"], scale, size, floor)
         anim["chase_pos"] = (anim["chase_pos"] + CHASE_ZONES_PER_SEC * get_param(settings, "speed", mode) * BREATH_INTERVAL) % len(ZONES)
+    elif mode == "spin":
+        r, g, b = base_rgb(color, color_source)
+        floor = get_param(settings, "intensity", mode)
+        apply_spin(side, r, g, b, anim["chase_pos"], scale, floor)
+        anim["chase_pos"] = (anim["chase_pos"] + SPIN_ZONES_PER_SEC * get_param(settings, "speed", mode) * BREATH_INTERVAL) % len(ZONES)
     elif mode == "multidot":
         size = get_param(settings, "size", mode)
         floor = get_param(settings, "intensity", mode)
         apply_multidot(side, anim["multidot_pos"], scale, size, floor)
         anim["multidot_pos"] = (anim["multidot_pos"] + MULTIDOT_ZONES_PER_SEC * get_param(settings, "speed", mode) * BREATH_INTERVAL) % len(ZONES)
-    elif mode == "alternating":
-        r, g, b = base_rgb(mode, color)
-        floor = get_param(settings, "intensity", mode)
-        level = floor + (1 - floor) * (0.5 + 0.5 * math.sin(anim["phase"] + SIDE_PHASE_OFFSET[side]))
-        apply_side_rgb(side, r * level * scale, g * level * scale, b * level * scale)
-        anim["phase"] = (anim["phase"] + BASE_BREATH_STEP * get_param(settings, "speed", mode)) % (2 * math.pi)
     elif mode == "reactive":
         floor = get_param(settings, "intensity", mode)
         if side == "l":
@@ -748,11 +831,12 @@ def render_side_animated(side, s, scale, anim, reactive, ambilight_colors, flash
         color3 = ambilight_colors[0] if side == "l" else ambilight_colors[1]
         apply_side_rgb(side, color3[0] * scale, color3[1] * scale, color3[2] * scale)
     else:
-        r, g, b = base_rgb(mode, color)
+        r, g, b = base_rgb(color, color_source)
         floor = get_param(settings, "intensity", mode)
         level = scale * (floor + (1 - floor) * (0.5 + 0.5 * math.sin(anim["phase"])))
         apply_side_rgb(side, r * level, g * level, b * level)
         anim["phase"] = (anim["phase"] + BASE_BREATH_STEP * get_param(settings, "speed", mode)) % (2 * math.pi)
+    _maybe_charging_dot(side, s, scale, charging)
 
 
 def run_daemon():
@@ -776,7 +860,15 @@ def run_daemon():
             reactive.close()
         if not used_ambilight:
             ambilight.close()
-        any_animated = any(m in ANIMATED_MODES for m in modes.values())
+        charging = is_charging()
+        # The charging indicator steps once a second - that needs the fast
+        # tick even for an otherwise-static mode, or it'd only update once
+        # per IDLE_INTERVAL and the "rotation" would just look like an
+        # occasional jump.
+        any_charging_dot = charging and any(
+            state[side]["color_source"] == "battery" and state[side]["charging_indicator"] for side in SIDES
+        )
+        any_animated = any_charging_dot or any(m in ANIMATED_MODES for m in modes.values())
         if any_animated:
             if used_reactive:
                 reactive.poll()
@@ -786,13 +878,13 @@ def run_daemon():
                 speed_r = get_param(state["r"]["settings"], "speed", "ambilight")
                 ambilight_colors = ambilight.sample(speed_l, speed_r)
             for side in SIDES:
-                render_side_animated(side, state[side], scale, anim[side], reactive, ambilight_colors, state["flash_colors"])
+                render_side_animated(side, state[side], scale, anim[side], reactive, ambilight_colors, state["flash_colors"], charging)
             if used_reactive:
                 reactive.tick_decay()
             time.sleep(BREATH_INTERVAL)
         else:
             for side in SIDES:
-                render_side_static(side, state[side], scale)
+                render_side_static(side, state[side], scale, charging)
             anim = {"l": _new_anim(), "r": _new_anim()}
             time.sleep(IDLE_INTERVAL if not state["screen_link"] else BREATH_INTERVAL * 4)
 
@@ -804,6 +896,8 @@ def print_state():
         s = state[side]
         print(f"mode_{side}={s['mode']}")
         print(f"color_{side}={s['color']}")
+        print(f"color_source_{side}={s['color_source']}")
+        print(f"charging_indicator_{side}={'1' if s['charging_indicator'] else '0'}")
         print(f"duotone_color_a_{side}={s['duotone_color_a']}")
         print(f"duotone_color_b_{side}={s['duotone_color_b']}")
         print(f"duotone_orientation_{side}={s['duotone_orientation']}")
@@ -827,6 +921,9 @@ def main(argv):
         state = load_state()
         state[side]["mode"] = "static"
         state[side]["color"] = value
+        # Picking an explicit color is a clear signal to stop tracking
+        # battery level - otherwise it'd save but have no visible effect.
+        state[side]["color_source"] = "static"
         save_state(state)
         return 0 if apply_current() else 1
     if command == "set-mode":
@@ -864,6 +961,24 @@ def main(argv):
         state[side]["settings"][f"{param}_{key}"] = value
         save_state(state)
         return 0
+    if command == "set-color-source":
+        if len(argv) != 4 or argv[2] not in SIDES or argv[3] not in COLOR_SOURCES:
+            print(f"usage: stick-led-color set-color-source <l|r> <{'|'.join(COLOR_SOURCES)}>", file=sys.stderr)
+            return 2
+        side, source = argv[2], argv[3]
+        state = load_state()
+        state[side]["color_source"] = source
+        save_state(state)
+        return 0 if apply_current() else 1
+    if command == "set-charging-indicator":
+        if len(argv) != 4 or argv[2] not in SIDES or argv[3] not in ("on", "off"):
+            print("usage: stick-led-color set-charging-indicator <l|r> <on|off>", file=sys.stderr)
+            return 2
+        side = argv[2]
+        state = load_state()
+        state[side]["charging_indicator"] = argv[3] == "on"
+        save_state(state)
+        return 0 if apply_current() else 1
     if command == "set-flash-color":
         if len(argv) != 4 or argv[2] not in FLASH_BUTTONS or not re.fullmatch(r"[0-9A-Fa-f]{6}", argv[3]):
             print(f"usage: stick-led-color set-flash-color <{'|'.join(FLASH_BUTTONS)}> <RRGGBB hex>", file=sys.stderr)
@@ -897,7 +1012,8 @@ def main(argv):
         return 0
     print(
         "usage: stick-led-color get|set <l|r> <RRGGBB>|set-mode <l|r> <mode>|set-screen-link <on|off>"
-        "|set-param <l|r> <param> <mode> <value>|set-flash-color <button> <RRGGBB>"
+        "|set-param <l|r> <param> <mode> <value>|set-color-source <l|r> <static|battery>"
+        "|set-charging-indicator <l|r> <on|off>|set-flash-color <button> <RRGGBB>"
         "|set-duotone-color <l|r> <a|b> <RRGGBB>|set-duotone-orientation <l|r> <horizontal|vertical|diagonal>|apply|daemon",
         file=sys.stderr,
     )
