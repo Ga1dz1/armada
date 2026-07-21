@@ -21,7 +21,7 @@
 # card image build stages the same files this refreshes), so it can't go
 # stale on either path again.
 set -euo pipefail
-source /usr/lib/armada/storage-lib
+source /usr/lib/armada/bootimg-args
 
 BOOTROOT="${BOOTROOT:-/boot}"
 ESP="${ESP:-/boot/efi}"
