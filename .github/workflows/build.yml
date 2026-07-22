@@ -97,6 +97,17 @@ jobs:
           sep-tags: " "
           sep-annotations: " "
 
+      - name: Log in to ghcr.io
+        # The Containerfile's KERNEL_PKG now pins our own
+        # ghcr.io/<owner>/armada-packages/kernel (private, unlike
+        # virtudude's public base images), so buildah-build needs
+        # credentials to pull it - it never logged in before, since
+        # everything it used to pull was public. buildah-build runs as
+        # this same unprivileged user (no sudo anywhere before this
+        # point in the job), so the login has to be unprivileged too -
+        # a root-only login wouldn't be visible to it.
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+
       - name: Build Image
         id: build_image
         uses: redhat-actions/buildah-build@7a95fa7ee0f02d552a32753e7414641a04307056 # v2
