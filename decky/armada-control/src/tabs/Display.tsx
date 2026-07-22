@@ -2,7 +2,7 @@ import { ButtonItem, Field, PanelSection } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { getDisplayState, restartGamescopeSession, setDisplayConfig } from "../backend";
 import { SelectEdit } from "../components/widgets";
-import type { DisplayConnector, DisplayState } from "../types";
+import type { DisplayState } from "../types";
 
 // gamescope only ever drives one embedded output at a time (--prefer-output
 // picks the first available from a priority list at startup, there's no
@@ -10,22 +10,6 @@ import type { DisplayConnector, DisplayState } from "../types";
 // which single connector the whole game-mode session targets, not an
 // extend/mirror choice.
 const INTERNAL = "__internal__";
-
-// A display whose EDID advertises only portrait modes (confirmed live on
-// the official Retroid Screen Add-on: exactly one mode, 1080x1920) can
-// never look right in game mode. Confirmed live, not just from gamescope's
-// --help text: made DP-1 the genuinely active output (DSI-1 disabled) and
-// tried --force-orientation both directions (right, then left) - neither
-// changed anything on the actual panel. The flag only ever affects the
-// internal panel, even when it isn't the one gamescope is driving, so a
-// landscape-composited session on a portrait-only external output comes
-// out sideways with no way to correct it.
-const isPortraitOnly = (c: DisplayConnector) =>
-  c.modes.length > 0 &&
-  c.modes.every((mode) => {
-    const [w, h] = mode.split("x").map(Number);
-    return w > 0 && h > 0 && w < h;
-  });
 
 export function Display() {
   const [state, setState] = useState<DisplayState | null>(null);
@@ -54,11 +38,7 @@ export function Display() {
     { data: INTERNAL, label: "Internal Screen" },
     ...externals.map((c) => ({
       data: c.connector,
-      label: !c.connected
-        ? `${c.connector} (disconnected)`
-        : isPortraitOnly(c)
-          ? `${c.connector} (portrait-only, unsupported)`
-          : c.connector,
+      label: !c.connected ? `${c.connector} (disconnected)` : c.connector,
     })),
   ];
   const activeExternal = externals.find((c) => c.connector === state.connector);
@@ -85,12 +65,6 @@ export function Display() {
       return;
     }
     const target = externals.find((c) => c.connector === connector);
-    if (target && isPortraitOnly(target)) {
-      setErrorMessage(
-        `${connector} only reports a portrait mode, and gamescope can't rotate an external display - game mode would show sideways. Staying on the internal screen.`,
-      );
-      return;
-    }
     const previous = state.remembered[connector];
     const [w, h] = (target?.modes[0] || "1920x1080").split("x").map(Number);
     persist({
