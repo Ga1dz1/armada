@@ -83,14 +83,21 @@ mapping:
       gamepad:
         button: Select
 
-  - name: F1 Key
+  - name: Quick Access Button
+    # This device does have a dedicated extra button sending BTN_BACK - it
+    # was mapped to a plain F1 keypress here (leftover from before 94301b7
+    # gave AYN devices' identical BTN_BACK the same fix), which meant there
+    # was no way to open the quick access menu except the Home+Select combo
+    # fallback. ayn_mcu.yaml already maps this exact same source event to
+    # QuickAccess; mirrored here.
     source_events:
       - evdev:
           event_type: KEY
           event_code: BTN_BACK
           value_type: button
     target_event:
-      keyboard: KeyF1
+      gamepad:
+        button: QuickAccess
 
   - name: Right Trigger
     source_events:
