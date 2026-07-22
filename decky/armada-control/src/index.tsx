@@ -11,30 +11,56 @@ import {
 export default definePlugin(() => {
   let unregisterDownloadWatcher = () => {};
   const persistHandledGames = () => {
-    saveCompatApplied(handledGameAppids()).catch(() => {});
+    saveCompatApplied(handledGameAppids()).catch((error) => {
+      console.error("[Armada Control] saveCompatApplied failed", error);
+    });
   };
   let cancelled = false;
-  const handledRequest = getCompatApplied()
-    .then((appids) => ({ appids, loaded: true }))
-    .catch(() => ({ appids: [] as string[], loaded: false }));
-  Promise.all([getConfig(), getInstalledGames(), handledRequest])
-    .then(([config, games, handled]) => {
+  const delay = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+  // getConfig/getInstalledGames run this early in session startup, when the
+  // backend socket or Steam's own library scan can still be warming up - a
+  // single transient failure here used to silently disable auto-apply for
+  // the rest of the session (this whole block was one Promise.all with no
+  // retry and a swallowed .catch), which is indistinguishable from the
+  // feature just not working at all. Retries give a slow-starting backend
+  // a real chance instead of one shot.
+  const bootstrap = async (attempt = 1): Promise<void> => {
+    if (cancelled) return;
+    const handledRequest = getCompatApplied()
+      .then((appids) => ({ appids, loaded: true }))
+      .catch((error) => {
+        console.error("[Armada Control] getCompatApplied failed", error);
+        return { appids: [] as string[], loaded: false };
+      });
+    let config;
+    let games;
+    let handled;
+    try {
+      [config, games, handled] = await Promise.all([getConfig(), getInstalledGames(), handledRequest]);
+    } catch (error) {
+      console.error(`[Armada Control] compat bootstrap failed (attempt ${attempt})`, error);
+      if (attempt >= 5 || cancelled) return;
+      await delay(Math.min(30000, 2000 * attempt));
+      return bootstrap(attempt + 1);
+    }
+    if (cancelled) return;
+    configureCompatPolicy(
+      config.tweaks?.global?.windowsCompatTool,
+      handled.loaded && config.tweaks?.global?.autoApplyCompat !== false,
+      handled.appids,
+    );
+    const persist = handled.loaded ? persistHandledGames : () => {};
+    unregisterDownloadWatcher = registerDownloadWatcher(persist);
+    window.setTimeout(() => {
       if (cancelled) return;
-      configureCompatPolicy(
-        config.tweaks?.global?.windowsCompatTool,
-        handled.loaded && config.tweaks?.global?.autoApplyCompat !== false,
-        handled.appids,
-      );
-      const persist = handled.loaded ? persistHandledGames : () => {};
-      unregisterDownloadWatcher = registerDownloadWatcher(persist);
-      window.setTimeout(() => {
-        if (cancelled) return;
-        sweepInstalledGames(games.map((game) => game.appid))
-          .then(persist)
-          .catch(() => {});
-      }, 3000);
-    })
-    .catch(() => {});
+      sweepInstalledGames(games.map((game) => game.appid))
+        .then(persist)
+        .catch((error) => {
+          console.error("[Armada Control] sweepInstalledGames failed", error);
+        });
+    }, 3000);
+  };
+  bootstrap();
   return {
     name: "Armada Control",
     content: <Content />,
