@@ -168,8 +168,21 @@ case "$1" in
         log "pre-suspend done"
         ;;
     post)
-        # First line of this branch, before anything else - real suspend's
-        # own kernel-level DRM resume already turns the panel back on, but
+        # RESUME_FLAG first, before anything else that takes real time
+        # (including the grab below) - it's powerbuttond's ONLY backstop for
+        # the race where its own ungrabbed reader sees the wake press's
+        # leftover release before this hook's grab lands (see the comment
+        # a few lines down), and that race is most likely to land in the
+        # first moments after resume, not after a 2s grab has already run
+        # its course. Writing this after the grab (as before) left the flag
+        # entirely absent for that whole window - exactly when the backstop
+        # was needed most - which matched a real symptom: the device waking
+        # for a moment and immediately going back to sleep (powerbuttond
+        # reading the wake press's rebound as a fresh short-press because
+        # just_resumed() had nothing to check yet).
+        date +%s%3N > "$RESUME_FLAG" 2>/dev/null || true
+        # First line after that, before anything else - real suspend's own
+        # kernel-level DRM resume already turns the panel back on, but
         # relying on that alone means "wake feels instant" depends on the
         # DRM driver's own resume ordering priority relative to everything
         # else the kernel is bringing back up. An explicit, immediate write
@@ -185,7 +198,6 @@ case "$1" in
             # (ungrabbed) reader can misread it as a fresh short-press.
             timeout 2 evtest --grab "$pdev" >/dev/null 2>&1
         fi
-        date +%s%3N > "$RESUME_FLAG" 2>/dev/null || true
 
         if [[ -r "$DIAG_LOG_PATH_FLAG" ]]; then
             { read -r diag_log; read -r pre_ts; } < "$DIAG_LOG_PATH_FLAG"
