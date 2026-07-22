@@ -110,21 +110,26 @@ BACKLIGHT_BASE = Path("/sys/class/backlight")
 SIDES = ("l", "r")
 ZONES = (1, 2, 3, 4)
 IDLE_INTERVAL = 5.0
+# See _gamma_correct()'s own comment for why this exists at all.
+LED_GAMMA = 2.2
 # "duotone" is a normal mode: two colors and a split orientation, same
-# get/set pattern as the other per-mode settings. Zone-to-physical-position
-# mapping (which zone index actually sits where on the ring) is a best
-# guess pending confirmation on real hardware - the three DUOTONE_ZONE_GROUPS
-# entries assume zones 1-4 sit at NE/SE/SW/NW in that clockwise order
-# (matching chase's sweep direction); adjust the tuples below once a real
-# device confirms or corrects it.
+# get/set pattern as the other per-mode settings.
 DEFAULT_DUOTONE_COLOR_A = "0050FF"
-DEFAULT_DUOTONE_COLOR_B = "FFD700"
+# Confirmed live: pure gold (FFD700, 84% green) read as noticeably
+# greenish on this LED rather than gold/yellow - warmed up to cut the
+# green channel's share.
+DEFAULT_DUOTONE_COLOR_B = "FFAA00"
 DEFAULT_DUOTONE_ORIENTATION = "horizontal"
 DUOTONE_ORIENTATIONS = ("horizontal", "vertical", "diagonal")
+# Zone-to-physical-position mapping (which zone index sits where on the
+# ring) was a guess pending confirmation on real hardware; confirmed live
+# that the original guess had color A and color B swapped top/bottom
+# (and by extension right/left) from where they actually land - group
+# order below is flipped from that original guess to match.
 DUOTONE_ZONE_GROUPS = {
-    "horizontal": ((1, 4), (2, 3)),  # top (NE+NW) vs bottom (SE+SW)
-    "vertical": ((1, 2), (4, 3)),    # right (NE+SE) vs left (NW+SW)
-    "diagonal": ((1, 3), (4, 2)),    # NE+SW vs NW+SE
+    "horizontal": ((2, 3), (1, 4)),  # top (SE+SW) vs bottom (NE+NW)
+    "vertical": ((4, 3), (1, 2)),    # right (NW+SW) vs left (NE+SE)
+    "diagonal": ((4, 2), (1, 3)),    # NW+SE vs NE+SW
 }
 BREATH_INTERVAL = 0.05
 BREATH_PERIOD_S = 3.5
@@ -604,12 +609,28 @@ def screen_scale():
     return 1.0
 
 
+def _gamma_correct(value):
+    # HTR3212's brightness_set writes the raw value straight to the PWM
+    # duty-cycle register with zero correction of its own (confirmed in
+    # armada-packages' 0033_leds--Add-driver-for-HEROIC-HTR3212.patch), so a
+    # linear 0-255 value looks nothing like a linear perceived brightness -
+    # anything dimmed (screen_link's scale, a mode's intensity floor, a
+    # chase/multidot fade tail) comes out pale and hue-shifted instead of
+    # just dimmer, since 8-bit rounding distorts a small channel's value
+    # much more than a large one. Standard LED gamma fixes both: it lifts
+    # the dim end of the curve (so low values round more precisely) while
+    # leaving the endpoints fixed (0->0, 255->255), so full-brightness
+    # colors are completely unaffected.
+    v = max(0.0, min(255.0, value)) / 255.0
+    return (v ** LED_GAMMA) * 255.0
+
+
 def write_zone(side, zone, r, g, b):
     ok = False
     for chan, val in (("r", r), ("g", g), ("b", b)):
         led = LED_BASE / f"{side}:{chan}{zone}" / "brightness"
         try:
-            led.write_text(str(max(0, min(255, int(round(val))))))
+            led.write_text(str(max(0, min(255, int(round(_gamma_correct(val)))))))
             ok = True
         except OSError:
             pass

@@ -20,8 +20,14 @@ import type { Config, StickLedSideState, StickLedState } from "../types";
 
 const PRESET_COLORS: { label: string; value: string }[] = [
   { label: "Blue", value: "0050FF" },
+  { label: "Cyan", value: "00E5FF" },
   { label: "Purple", value: "8000FF" },
+  { label: "Pink", value: "FF0080" },
   { label: "Red", value: "FF0000" },
+  { label: "Orange", value: "FF8000" },
+  // Matches stick-led-color's DEFAULT_DUOTONE_COLOR_B - pure gold (FFD700)
+  // read as noticeably greenish on this LED.
+  { label: "Yellow", value: "FFAA00" },
   { label: "Green", value: "00FF00" },
   { label: "White", value: "FFFFFF" },
   { label: "Off", value: "000000" },
@@ -440,16 +446,16 @@ export function Settings({ config, setConfig }: {
           )}
           {COLOR_VISIBLE_MODES.has(mode) && sideState.colorSource !== "battery" && (
             <>
+              {PRESET_COLORS.map((preset) => (
+                <ButtonItem key={preset.value} layout="below" onClick={() => setStickLedColor(preset.value)}>
+                  {preset.label}
+                </ButtonItem>
+              ))}
               <ButtonItem layout="below" onClick={() => setColorsExpanded((expanded) => !expanded)}>
-                {colorsExpanded ? "Hide colors ▲" : "Show colors ▼"}
+                {colorsExpanded ? "Hide custom color ▲" : "Custom color (advanced) ▼"}
               </ButtonItem>
               {colorsExpanded && (
                 <>
-                  {PRESET_COLORS.map((preset) => (
-                    <ButtonItem key={preset.value} layout="below" onClick={() => setStickLedColor(preset.value)}>
-                      {preset.label}
-                    </ButtonItem>
-                  ))}
                   <SliderEdit
                     label="Red"
                     value={hexToRgb(sideState.color)[0]}
