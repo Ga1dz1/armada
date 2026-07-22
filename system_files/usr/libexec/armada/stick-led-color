@@ -818,6 +818,12 @@ def render_side_animated(side, s, scale, anim, reactive, ambilight_colors, flash
     if mode not in ANIMATED_MODES:
         render_side_static(side, s, scale, charging)
         return
+    # Charging dot rides on top of the base render's current brightness by
+    # default (only breathing actually varies it over time - everything
+    # else here is already at full brightness*scale on every tick) so it
+    # doesn't look like a static blue LED stuck mid-pulse while the rest of
+    # the stick visibly breathes around it.
+    dot_scale = scale
     if mode == "rainbow":
         r, g, b = rainbow_rgb(anim["phase"])
         apply_side_rgb(side, r * scale, g * scale, b * scale)
@@ -857,7 +863,8 @@ def render_side_animated(side, s, scale, anim, reactive, ambilight_colors, flash
         level = scale * (floor + (1 - floor) * (0.5 + 0.5 * math.sin(anim["phase"])))
         apply_side_rgb(side, r * level, g * level, b * level)
         anim["phase"] = (anim["phase"] + BASE_BREATH_STEP * get_param(settings, "speed", mode)) % (2 * math.pi)
-    _maybe_charging_dot(side, s, scale, charging)
+        dot_scale = level
+    _maybe_charging_dot(side, s, dot_scale, charging)
 
 
 def run_daemon():
