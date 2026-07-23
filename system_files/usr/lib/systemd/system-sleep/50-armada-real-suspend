@@ -28,6 +28,15 @@
 #    staying asleep indefinitely. Configurable, off by default.
 #  - wifi reconnection reliability: see suspend_radios()/resume_radios()
 #    below for why the radio is explicitly blocked/unblocked around sleep.
+#  - InputPlumber's vhci_hcd (USB/IP) targets - currently just Flip2's
+#    "deck", see 01-retroid-flip2-controller.yaml - refuse to suspend at
+#    all while a virtual device is attached ("We have N active connection.
+#    Do not suspend" -> -EBUSY -> the WHOLE system suspend aborts, not just
+#    InputPlumber). Confirmed via shuuri-labs/pocknix-os hitting the exact
+#    same thing (their own inputplumber-sleep-pre/post hooks); deck-uhid
+#    (every other device) is UHID-based, not USB/IP, so this is a no-op for
+#    them - suspend_inputplumber_if_vhci() below only acts if it actually
+#    finds an active vhci_hcd connection.
 #  - per-cycle wake diagnostics under /var/log/armada-suspend/ (latest.log is
 #    always the most recent cycle): community reports of an inconsistent
 #    ("every other time") wake on SM8250 couldn't be root-caused without a
@@ -121,6 +130,40 @@ resume_radios() {
 }
 
 SAVE_DIR="/run/armada/real-suspend"
+INPUTPLUMBER_RESUME_FLAG="/run/armada/inputplumber-resume"
+
+# vhci_hcd hard-refuses to suspend while any virtual USB/IP device is still
+# attached, aborting the WHOLE system suspend - not just InputPlumber's own
+# state. Stop it (which detaches the vhci device) before sleep if it's
+# using that path, and restart it on resume, but only if we're the one who
+# stopped it (don't start it if the user had already disabled it).
+inputplumber_vhci_busy() {
+    local status="/sys/devices/platform/vhci_hcd.0/status"
+    [[ -r "$status" ]] || return 1
+    awk 'NR>1 && $6 != "000000" {f=1} END{exit !f}' "$status" 2>/dev/null
+}
+
+suspend_inputplumber_if_vhci() {
+    inputplumber_vhci_busy || return 0
+    if systemctl is-active --quiet inputplumber; then
+        touch "$INPUTPLUMBER_RESUME_FLAG"
+        systemctl stop inputplumber
+    fi
+    # Give the kernel a moment to tear down the virtual USB port so suspend
+    # isn't aborted by a still-attached one (max ~3s).
+    local i=0
+    while inputplumber_vhci_busy; do
+        (( i >= 30 )) && break
+        i=$((i + 1))
+        sleep 0.1
+    done
+}
+
+resume_inputplumber() {
+    [[ -e "$INPUTPLUMBER_RESUME_FLAG" ]] || return 0
+    rm -f "$INPUTPLUMBER_RESUME_FLAG"
+    systemctl start inputplumber
+}
 
 # Community reports of an inconsistent ("every other time") wake failure on
 # SM8250 - the first default rollout of real suspend for this SoC - couldn't
@@ -145,8 +188,12 @@ pwrkey_irq_count() {
 
 case "$1" in
     pre)
-        as_session wpctl set-mute @DEFAULT_AUDIO_SINK@ 1 2>/dev/null || true
         mkdir -p /run/armada "$SAVE_DIR" "$DIAG_DIR"
+        # First and before anything else: a still-attached vhci_hcd device
+        # aborts the WHOLE suspend, so this needs to be clear before any of
+        # the rest of this hook (or the kernel's own suspend) bothers.
+        suspend_inputplumber_if_vhci
+        as_session wpctl set-mute @DEFAULT_AUDIO_SINK@ 1 2>/dev/null || true
         touch "$STICK_LED_FLAG"
         # Give the stick-led daemon (polls every 0.5s) a full cycle to blank
         # the LEDs before the kernel's own freeze_processes() takes it too.
@@ -218,6 +265,7 @@ case "$1" in
         fi
 
         resume_radios
+        resume_inputplumber
         rm -rf "$SAVE_DIR"
         as_session wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 2>/dev/null || true
         log "post-resume done"
