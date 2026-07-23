@@ -124,6 +124,7 @@ SUSPEND_POLL_INTERVAL = 0.5
 DEFAULT_COLOR = "0050FF"
 DEFAULT_MODE = "static"
 DEFAULT_SCREEN_LINK = False
+DEFAULT_ENABLED = True
 DEFAULT_COLOR_SOURCE = "static"
 DEFAULT_CHARGING_INDICATOR = True
 COLOR_SOURCES = ("static", "battery", "random", "shimmer")
@@ -436,6 +437,20 @@ AMBILIGHT_EDGE_WIDTH_PX = 100  # sample this many pixels beyond the margin
 AMBILIGHT_TOP_EXCLUDE = 0.40  # fraction of screen height excluded from the top
 AMBILIGHT_BOTTOM_EXCLUDE = 0.05  # fraction of screen height excluded from the bottom
 AMBILIGHT_DEFAULT = (0, 80, 255)
+# DISABLED 2026-07-23: confirmed live that this daemon's own kmsgrab
+# capture (running as root, on the SAME primary DRM node gamescope needs
+# for its own atomic commits) can wedge gamescope's rendering entirely -
+# drmModeAtomicCommit started failing with EACCES continuously (over
+# 1000/min) the moment ambilight mode was active on a real device, dropping
+# off within seconds of switching a stick away from it, and gamescope
+# needed a full session restart to recover cleanly even after that.
+# kmsgrab and an active compositor both wanting the primary node's
+# mode-setting state is a real architectural conflict on this msm/DPU
+# driver, not something a flag/tuning fixes - ambilight mode falls back to
+# AMBILIGHT_DEFAULT (a static color) until this has a compositor-safe
+# capture path instead (e.g. gamescope's own screencopy protocol or a
+# PipeWire portal), rather than raw kmsgrab.
+AMBILIGHT_CAPTURE_DISABLED = True
 AMBILIGHT_FRAME_SIZE = 2 * AMBILIGHT_GRID * AMBILIGHT_GRID * 4  # bgr0 bytes per output frame
 # This device's panel is mounted portrait; gamescope is launched with
 # --force-orientation right --use-rotation-shader to correct for it on the
@@ -554,6 +569,8 @@ class AmbilightSampler:
         self.buf = b""
 
     def ensure_open(self):
+        if AMBILIGHT_CAPTURE_DISABLED:
+            return False
         if self.proc is not None and self.proc.poll() is None:
             return True
         self.close()
@@ -644,7 +661,13 @@ def _default_side_state():
 
 
 def load_state():
-    state = {"l": _default_side_state(), "r": _default_side_state(), "screen_link": DEFAULT_SCREEN_LINK, "flash_colors": {}}
+    state = {
+        "l": _default_side_state(),
+        "r": _default_side_state(),
+        "screen_link": DEFAULT_SCREEN_LINK,
+        "enabled": DEFAULT_ENABLED,
+        "flash_colors": {},
+    }
     try:
         lines = CONFIG.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
@@ -656,6 +679,9 @@ def load_state():
         key, raw = key.strip(), raw.strip()
         if key == "screen_link":
             state["screen_link"] = raw == "1"
+            continue
+        if key == "enabled":
+            state["enabled"] = raw == "1"
             continue
         if key.startswith("flash_") and key[len("flash_"):] in FLASH_BUTTONS:
             if re.fullmatch(r"[0-9A-Fa-f]{6}", raw or ""):
@@ -716,7 +742,10 @@ def load_state():
 
 def save_state(state):
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    lines = [f"screen_link={'1' if state['screen_link'] else '0'}"]
+    lines = [
+        f"screen_link={'1' if state['screen_link'] else '0'}",
+        f"enabled={'1' if state.get('enabled', True) else '0'}",
+    ]
     for side in SIDES:
         s = state[side]
         lines.append(f"mode_{side}={s['mode']}")
@@ -965,6 +994,8 @@ def rainbow_rgb(phase):
 
 def apply_current():
     state = load_state()
+    if not state.get("enabled", True):
+        return apply_rgb(0, 0, 0)
     scale = screen_scale() if state["screen_link"] else 1.0
     charging = is_charging()
     ok = False
@@ -1109,6 +1140,13 @@ def run_daemon():
             time.sleep(SUSPEND_POLL_INTERVAL)
             continue
         state = load_state()
+        if not state.get("enabled", True):
+            reactive.close()
+            ambilight.close()
+            apply_rgb(0, 0, 0)
+            anim = {"l": _new_anim(), "r": _new_anim()}
+            time.sleep(IDLE_INTERVAL)
+            continue
         scale = screen_scale() if state["screen_link"] else 1.0
         modes = {side: state[side]["mode"] for side in SIDES}
         used_reactive = "reactive" in modes.values()
@@ -1154,6 +1192,7 @@ def run_daemon():
 def print_state():
     state = load_state()
     print(f"screen_link={'1' if state['screen_link'] else '0'}")
+    print(f"enabled={'1' if state.get('enabled', True) else '0'}")
     for side in SIDES:
         s = state[side]
         print(f"mode_{side}={s['mode']}")
@@ -1195,6 +1234,14 @@ def main(argv):
         side, mode = argv[2], argv[3]
         state = load_state()
         state[side]["mode"] = mode
+        save_state(state)
+        return 0 if apply_current() else 1
+    if command == "set-enabled":
+        if len(argv) != 3 or argv[2] not in ("on", "off"):
+            print("usage: stick-led-color set-enabled <on|off>", file=sys.stderr)
+            return 2
+        state = load_state()
+        state["enabled"] = argv[2] == "on"
         save_state(state)
         return 0 if apply_current() else 1
     if command == "set-screen-link":
@@ -1290,7 +1337,7 @@ def main(argv):
             return 2
         return cmd_test_ambilight(int(argv[2]) if len(argv) > 2 else 20)
     print(
-        "usage: stick-led-color get|set <l|r> <RRGGBB>|set-mode <l|r> <mode>|set-screen-link <on|off>"
+        "usage: stick-led-color get|set <l|r> <RRGGBB>|set-mode <l|r> <mode>|set-enabled <on|off>|set-screen-link <on|off>"
         "|set-param <l|r> <param> <mode> <value>|set-color-source <l|r> <static|battery|random|shimmer>"
         "|set-charging-indicator <l|r> <on|off>|set-flash-color <button> <RRGGBB>"
         "|set-duotone-color <l|r> <a|b> <RRGGBB>|set-duotone-orientation <l|r> <horizontal|vertical|diagonal>"

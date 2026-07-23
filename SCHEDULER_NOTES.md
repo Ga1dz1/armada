@@ -7,7 +7,22 @@ confirmed via its own code comments, directly derived from our
 structure/naming almost 1:1, several files literally say "ported from
 armada's X.py"). Two scheduler-related things they carry that we don't.
 
-## gamescope compositor on SCHED_RR — shipped
+## gamescope compositor on SCHED_RR — DISABLED, suspected of a full system hang (2026-07-23)
+
+Shortly after this shipped via OTA, a real device hung completely (not
+just gamescope - unresponsive to ping, not just SSH) specifically on a
+Desktop <-> Gaming Mode transition, which restarts gamescope and causes
+exactly the kind of thread churn that would matter here. Device access
+wasn't available to confirm live at time of writing, but the mechanism
+fits precisely: `kernel.sched_rt_runtime_us=-1` removes the RT throttle
+that would otherwise cap a misbehaving SCHED_RR thread's CPU share, and
+this device's `nmi_watchdog`/`soft_watchdog`/`watchdog` are all *already*
+off (pre-existing, not from this change) - so a runaway RT thread has
+nothing capping it and nothing to recover the system if it locks up a
+core. Reverted both the service enable and the sysctl pending a real,
+supervised on-device investigation - don't re-enable blind.
+
+## gamescope compositor on SCHED_RR — originally shipped
 
 Ported as `armada-gamescope-rt` (`system_files/usr/libexec/armada/`), a
 root helper that polls for gamescope/gamescope-wl and promotes its normal

@@ -35,7 +35,15 @@ systemctl enable armada-fixups.service
 systemctl enable armada-installer-visibility.service
 systemctl enable armada-steamapps.service
 systemctl enable armada-powerd.service
-systemctl enable armada-gamescope-rt.service
+# Disabled - see git history: suspected of causing a full, unrecoverable
+# system hang (not just gamescope) on Desktop <-> Gaming Mode transitions.
+# An unthrottled (kernel.sched_rt_runtime_us=-1, reverted alongside this)
+# SCHED_RR thread with no preemption cap can starve the whole machine,
+# including networking, if anything about it doesn't behave the way a
+# healthy compositor thread should during the thread churn a session
+# restart causes - exactly the failure mode observed. Needs a real,
+# supervised on-device A/B before re-enabling, not a blind re-add.
+# systemctl enable armada-gamescope-rt.service
 systemctl enable armada-control.service
 systemctl enable armada-steamos-manager.service
 systemctl --global enable armada-steamos-manager.service
