@@ -11,17 +11,20 @@ name: Retroid Layout (Flip2)
 # Split out from 01-retroid-controller.yaml: same serial-MCU gamepad as
 # Mini V2/RP5 (phys "retroid-pocket-gamepad/input0", identical raw button
 # codes - confirmed unchanged in shuuri-labs/pocknix-os's own Flip2 capability
-# map, which maps BTN_START/BTN_SELECT the same way we do), but community
-# feedback on real Flip2 hardware (2026-07-23, unverified device per our own
-# README) reports Select acting as Start plus the control scheme flapping
-# between keyboard+mouse and controller in Gaming Mode specifically - not
-# reproducing in Desktop mode, where a game reading the raw device directly
-# gets Start/Select right. That points at the deck-uhid target/Steam Input
-# translation layer, not the kernel driver or capability map. pocknix-os,
-# which has real hardware for this whole device family, uses target `deck`
-# (not `deck-uhid`) across the board - since Mini V2 (our tested, working
-# device) is fine on deck-uhid, this only changes it for Flip2 rather than
-# risking a regression on hardware that already works.
+# map, which maps BTN_START/BTN_SELECT the same way we do).
+#
+# Briefly set to target `deck` (2026-07-23) to chase a community report of
+# Select acting as Start on real Flip2 hardware, following pocknix-os's own
+# choice of `deck` over `deck-uhid` for this family. That broke worse: `deck`
+# emulates a real USB device over the kernel's vhci_hcd (USB/IP) host
+# controller, and this kernel's config has no CONFIG_USBIP_CORE/
+# CONFIG_USBIP_VHCI_HCD at all (confirmed against both the arm64 defconfig
+# armada-packages/kernel builds from and our own config override fragment -
+# neither enables it), so InputPlumber could never actually create the
+# target device and the gamepad disappeared entirely in Gaming Mode. Back on
+# deck-uhid, same as every other device: no vhci_hcd dependency, and the
+# Select/Start swap is a real but lesser bug to chase separately (likely a
+# capability-map-level fix, not a target-type swap).
 matches:
   - udev:
       sys_path: /sys/firmware/devicetree/base
@@ -48,7 +51,6 @@ source_devices:
 options:
   auto_manage: true
 
-# `deck`, not `deck-uhid` - see the file-level comment above.
 target_devices:
-  - deck
+  - deck-uhid
   - keyboard
