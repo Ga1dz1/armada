@@ -14,6 +14,7 @@ import {
   setStickLedParam as applyStickLedParam,
   setStickLedScreenLink as applyStickLedScreenLink,
   setStickLedEnabled as applyStickLedEnabled,
+  setStickLedMaxBrightness as applyStickLedMaxBrightness,
   setStickLedSeesaw as applyStickLedSeesaw,
 } from "../backend";
 import { SelectEdit, SliderEdit, ToggleRow } from "../components/widgets";
@@ -194,6 +195,17 @@ export function Lighting({ config, setConfig }: {
       setConfig((current) => (current ? { ...current, stickLed: applied } : current));
     } catch (error) {
       setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, enabled: previous } } : current));
+    }
+  };
+  const setStickLedMaxBrightness = async (value: number) => {
+    if (!stickLed) return;
+    const previous = stickLed.maxBrightness;
+    setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, maxBrightness: value } } : current));
+    try {
+      const applied = await applyStickLedMaxBrightness(value);
+      setConfig((current) => (current ? { ...current, stickLed: applied } : current));
+    } catch (error) {
+      setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, maxBrightness: previous } } : current));
     }
   };
   const setStickLedColor = async (hex: string) => {
@@ -424,6 +436,22 @@ export function Lighting({ config, setConfig }: {
       {stickLed.enabled && (
         <>
       <ToggleRow
+        label="Follow screen brightness"
+        description="Dim both sticks along with the display backlight"
+        value={!!stickLed.screenLink}
+        onChange={setStickLedScreenLink}
+      />
+      {!stickLed.screenLink && (
+        <SliderEdit
+          label="Max Brightness"
+          value={Math.round((stickLed.maxBrightness ?? 1) * 100)}
+          min={0}
+          max={100}
+          step={5}
+          onChange={(value) => setStickLedMaxBrightness(value / 100)}
+        />
+      )}
+      <ToggleRow
         label="Configure each stick separately"
         description="Off: changes below apply to both sticks at once. On: pick a stick and edit just that one."
         value={separate}
@@ -474,12 +502,6 @@ export function Lighting({ config, setConfig }: {
             />
           );
         })}
-      <ToggleRow
-        label="Follow screen brightness"
-        description="Dim both sticks along with the display backlight"
-        value={!!stickLed.screenLink}
-        onChange={setStickLedScreenLink}
-      />
       {COLOR_VISIBLE_MODES.has(mode) && (
         <>
           <ButtonItem layout="below" onClick={() => setColorsExpanded((expanded) => !expanded)}>

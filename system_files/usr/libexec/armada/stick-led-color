@@ -124,6 +124,7 @@ SUSPEND_POLL_INTERVAL = 0.5
 DEFAULT_COLOR = "0050FF"
 DEFAULT_MODE = "static"
 DEFAULT_SCREEN_LINK = False
+DEFAULT_MAX_BRIGHTNESS = 1.0
 DEFAULT_ENABLED = True
 DEFAULT_COLOR_SOURCE = "static"
 DEFAULT_CHARGING_INDICATOR = True
@@ -410,7 +411,7 @@ def stick_reactive_rgb(x, y, floor):
     return tuple(c * 255 * level for c in colorsys.hsv_to_rgb(hue, 1.0, 1.0))
 
 
-# --- ambilight mode: DRM framebuffer color sampling ------------------------
+# --- ambilight mode: screen color sampling via grim -------------------------
 # Each stick sits below and to its own side of the panel, not behind the
 # whole screen, so this samples a strip near each screen edge instead of
 # averaging everything: skip a small margin in from the edge (in case of a
@@ -418,53 +419,46 @@ def stick_reactive_rgb(x, y, floor):
 # and only look at the lower part of the screen's height (top ~40% is too far
 # from either stick to feel connected to it; the very bottom ~5% is often a
 # HUD/taskbar strip that isn't representative of "what's on screen"). These
-# are screen-position constants, not per-device ones, because only one
-# device is supported so far - if a second one needs different numbers this
-# should move into device-env instead of growing per-device branches here.
-# This SoC's DRM card is not reliably numbered /dev/dri/card0 (confirmed on
-# real hardware it's card1, with no card0 node at all), so the right node is
-# found at runtime instead of hardcoded.
-AMBILIGHT_HWDOWNLOAD_FORMAT = "x2rgb10le"  # this Adreno/msm driver's native scanout
-# format (confirmed via `ffmpeg -loglevel verbose ... kmsgrab`) - hwdownload
-# fails outright if told to target anything else (tried bgr0 and nv12
-# directly; both rejected). A separate `format=bgr0` step after hwdownload
-# does the actual software pixel conversion.
-AMBILIGHT_CAPTURE_FPS = 2  # fixed ffmpeg output rate - see AmbilightSampler docstring
+# are screen-position FRACTIONS (not this file's other ambilight constants,
+# which are pixel counts - grim tells us the actual output size per capture,
+# unlike the old kmsgrab path which needed fixed pixel margins/widths tuned
+# for one known resolution) - see AMBILIGHT_EDGE_MARGIN_PX/WIDTH_PX below for
+# the one pair that's still pixels, kept small enough not to matter much if
+# the resolution ever changes.
+#
+# UNTESTED as of 2026-07-23 - see AMBILIGHT_CAPTURE_DISABLED just below.
+# The previous approach (ffmpeg's kmsgrab demuxer, opening the primary DRM
+# node directly as root) confirmed live that it wedges gamescope's own
+# atomic commits on this msm/DPU driver (drmModeAtomicCommit failing with
+# EACCES continuously, over 1000/min, needing a full session restart to
+# recover even after switching modes away from it). grim instead runs as
+# the ordinary session user and asks gamescope's own compositor for a copy
+# of its already-composited output via the standard
+# wlr-screencopy-unstable-v1 Wayland protocol - it never touches DRM at
+# all, so it can't contend with gamescope for the primary node the way
+# kmsgrab did. That part is a well-founded fix. What ISN'T yet confirmed on
+# real hardware: the exact WAYLAND_DISPLAY name gamescope's nested
+# compositor uses (assumed "gamescope-0", the documented convention, with
+# a same-directory socket scan as a fallback - see
+# _gamescope_wayland_display()), and that a root-spawned `runuser` into the
+# session user can actually reach that socket at all (should work - same
+# mechanism logind/PAM already rely on - but "should" isn't "confirmed").
+AMBILIGHT_CAPTURE_FPS = 2  # how often to spawn grim - see AmbilightSampler docstring
 AMBILIGHT_SMOOTHING = 0.35  # fraction of the way to the new sample each time, at speed=1.0
-AMBILIGHT_GRID = 4  # downscale each side's sampled strip to this many pixels per side
 AMBILIGHT_EDGE_MARGIN_PX = 10  # skip this many pixels in from the left/right screen edge
 AMBILIGHT_EDGE_WIDTH_PX = 100  # sample this many pixels beyond the margin
 AMBILIGHT_TOP_EXCLUDE = 0.40  # fraction of screen height excluded from the top
 AMBILIGHT_BOTTOM_EXCLUDE = 0.05  # fraction of screen height excluded from the bottom
 AMBILIGHT_DEFAULT = (0, 80, 255)
-# DISABLED 2026-07-23: confirmed live that this daemon's own kmsgrab
-# capture (running as root, on the SAME primary DRM node gamescope needs
-# for its own atomic commits) can wedge gamescope's rendering entirely -
-# drmModeAtomicCommit started failing with EACCES continuously (over
-# 1000/min) the moment ambilight mode was active on a real device, dropping
-# off within seconds of switching a stick away from it, and gamescope
-# needed a full session restart to recover cleanly even after that.
-# kmsgrab and an active compositor both wanting the primary node's
-# mode-setting state is a real architectural conflict on this msm/DPU
-# driver, not something a flag/tuning fixes - ambilight mode falls back to
-# AMBILIGHT_DEFAULT (a static color) until this has a compositor-safe
-# capture path instead (e.g. gamescope's own screencopy protocol or a
-# PipeWire portal), rather than raw kmsgrab.
+AMBILIGHT_SESSION_USER = "armada"
+# Flip to False only after confirming live on real hardware that grim
+# actually reaches gamescope's compositor and returns a sane, correctly
+# oriented frame (`stick-led-color test-ambilight` is the sanity check for
+# this, same as it was for the old kmsgrab path) - see the class docstring
+# above for exactly what's unconfirmed. Until then this stays a static
+# color rather than risking a repeat of the kmsgrab incident with a
+# different, equally-untested mechanism.
 AMBILIGHT_CAPTURE_DISABLED = True
-AMBILIGHT_FRAME_SIZE = 2 * AMBILIGHT_GRID * AMBILIGHT_GRID * 4  # bgr0 bytes per output frame
-# This device's panel is mounted portrait; gamescope is launched with
-# --force-orientation right --use-rotation-shader to correct for it on the
-# way to the display, but kmsgrab grabs the raw scanout buffer *before* that
-# correction, so the "left"/"right" edges below are meaningless without first
-# undoing it. Confirmed empirically: captured a frame, compared against a
-# known on-screen landmark (clock/battery, top-right as worn), and
-# ffmpeg's transpose=2 (90 deg counter-clockwise) is what makes the capture
-# upright and match it. Unlike the LED zone numbering elsewhere in this file
-# (a fact about the HTR3212 wiring, true for any device with these same
-# zones), this is purely about *this panel's* mounting - a future device
-# with the same RGB stick hardware but a differently-oriented or
-# already-landscape-native panel would need a different value here, or none.
-AMBILIGHT_SCANOUT_TRANSPOSE = 2
 
 
 def cmd_test_zones():
@@ -496,9 +490,13 @@ def cmd_test_zones():
 def cmd_test_ambilight(seconds):
     """Print the sampled left/right ambilight colors once a second so
     someone can watch the numbers next to the physical screen and stick to
-    confirm the capture is reading the intended edge - the sanity check for
-    AMBILIGHT_SCANOUT_TRANSPOSE and the crop constants above it, without
-    needing a developer session to re-derive it by hand."""
+    confirm the capture is reading the intended edge and reacting at all -
+    the sanity check AMBILIGHT_CAPTURE_DISABLED's own comment refers to.
+    Deliberately bypasses that flag for its own duration - running this
+    command IS the deliberate verification step."""
+    global AMBILIGHT_CAPTURE_DISABLED
+    previously_disabled = AMBILIGHT_CAPTURE_DISABLED
+    AMBILIGHT_CAPTURE_DISABLED = False
     sampler = AmbilightSampler()
     try:
         end = time.time() + seconds
@@ -510,129 +508,130 @@ def cmd_test_ambilight(seconds):
             time.sleep(1.0)
     finally:
         sampler.close()
+        AMBILIGHT_CAPTURE_DISABLED = previously_disabled
     return 0
 
 
-def drm_card_path():
+def _session_uid(user):
     try:
-        cards = sorted(Path("/dev/dri").glob("card*"))
-    except OSError:
+        return subprocess.check_output(["id", "-u", user], text=True, timeout=2).strip()
+    except (OSError, subprocess.SubprocessError):
         return None
-    return str(cards[0]) if cards else None
 
 
-def _ambilight_filter():
-    m, w = AMBILIGHT_EDGE_MARGIN_PX, AMBILIGHT_EDGE_WIDTH_PX
-    y = f"ih*{AMBILIGHT_TOP_EXCLUDE}"
-    h = f"ih*{1.0 - AMBILIGHT_TOP_EXCLUDE - AMBILIGHT_BOTTOM_EXCLUDE}"
-    g = AMBILIGHT_GRID
-    return (
-        f"hwdownload,format={AMBILIGHT_HWDOWNLOAD_FORMAT},format=bgr0,"
-        f"transpose={AMBILIGHT_SCANOUT_TRANSPOSE},"
-        f"split=2[a][b];"
-        f"[a]crop=w={w}:h={h}:x={m}:y={y},scale={g}:{g}[left];"
-        f"[b]crop=w={w}:h={h}:x=iw-{m}-{w}:y={y},scale={g}:{g}[right];"
-        f"[left][right]hstack=inputs=2[out]"
-    )
+def _gamescope_wayland_display(runtime_dir):
+    # gamescope's documented convention for its own nested compositor
+    # socket; fall back to scanning the runtime dir in case a given
+    # gamescope build/config names it differently.
+    if (Path(runtime_dir) / "gamescope-0").exists():
+        return "gamescope-0"
+    try:
+        entries = sorted(Path(runtime_dir).glob("gamescope-*"))
+    except OSError:
+        entries = []
+    for entry in entries:
+        if not entry.name.endswith(".lock"):
+            return entry.name
+    try:
+        entries = sorted(Path(runtime_dir).glob("wayland-*"))
+    except OSError:
+        entries = []
+    for entry in entries:
+        if not entry.name.endswith(".lock"):
+            return entry.name
+    return None
 
 
-def _average_region(data, width, x0, x1, y0, y1):
+def _parse_ppm(data):
+    # grim's own raw PPM output: "P6\n<width> <height>\n255\n<RGB bytes>",
+    # no comments - a plain split is enough (no need for a general PPM
+    # parser here).
+    parts = data.split(b"\n", 3)
+    if len(parts) != 4 or parts[0] != b"P6":
+        return None
+    try:
+        width, height = (int(v) for v in parts[1].split())
+    except ValueError:
+        return None
+    pixels = parts[3]
+    if len(pixels) < width * height * 3:
+        return None
+    return width, height, pixels
+
+
+def _average_region_rgb(data, width, x0, x1, y0, y1):
     tr = tg = tb = 0.0
     n = 0
     for y in range(y0, y1):
         row = y * width
         for x in range(x0, x1):
-            off = (row + x) * 4
-            tb += data[off]
+            off = (row + x) * 3
+            tr += data[off]
             tg += data[off + 1]
-            tr += data[off + 2]
+            tb += data[off + 2]
             n += 1
     return (tr / n, tg / n, tb / n) if n else None
 
 
 class AmbilightSampler:
-    """Keeps a single ffmpeg kmsgrab process alive in the background rather
-    than spawning a fresh one per sample - process startup (dynamic linking,
-    opening the DRM card, allocating capture buffers) is the dominant cost
-    here, not the capture itself, so this amortizes that cost across the
-    whole time ambilight mode stays selected instead of paying it on every
-    single sample. ffmpeg runs at a fixed, modest output rate regardless of
-    the "speed" param; speed instead controls how aggressively each side's
-    LED color chases its own incoming sample (see sample()) - independent
-    per side since each stick can have its own speed now - which is the more
-    perceptually relevant knob for a slow ambient effect like this anyway."""
+    """Runs grim (a plain Wayland client, using gamescope's own
+    wlr-screencopy-unstable-v1 protocol) once per sample rather than
+    keeping a persistent process - grim is a one-shot screenshot tool, not
+    a stream, so there's no persistent-process cost to amortize the way
+    the old kmsgrab pipeline's setup cost was. Deliberately runs as
+    AMBILIGHT_SESSION_USER, not root: it's just an ordinary protocol client
+    asking gamescope for a copy of its already-composited output, so unlike
+    kmsgrab it never touches DRM directly and can't contend with
+    gamescope's own atomic commits for the primary node."""
 
     def __init__(self):
         self.color_l = AMBILIGHT_DEFAULT
         self.color_r = AMBILIGHT_DEFAULT
-        self.proc = None
-        self.buf = b""
-
-    def ensure_open(self):
-        if AMBILIGHT_CAPTURE_DISABLED:
-            return False
-        if self.proc is not None and self.proc.poll() is None:
-            return True
-        self.close()
-        card = drm_card_path()
-        if card is None:
-            return False
-        try:
-            self.proc = subprocess.Popen(
-                [
-                    "ffmpeg", "-hide_banner", "-loglevel", "error",
-                    "-f", "kmsgrab", "-device", card, "-i", "-",
-                    "-r", str(AMBILIGHT_CAPTURE_FPS),
-                    "-filter_complex", _ambilight_filter(),
-                    "-map", "[out]",
-                    "-f", "rawvideo", "-pix_fmt", "bgr0", "-",
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-            )
-        except OSError:
-            self.proc = None
-            return False
-        os.set_blocking(self.proc.stdout.fileno(), False)
-        self.buf = b""
-        return True
+        self.last_sample_time = 0.0
 
     def close(self):
-        if self.proc is not None:
-            try:
-                self.proc.kill()
-                self.proc.wait(timeout=1)
-            except (OSError, subprocess.TimeoutExpired):
-                pass
-            self.proc = None
-        self.buf = b""
+        pass
+
+    def _capture(self):
+        uid = _session_uid(AMBILIGHT_SESSION_USER)
+        if uid is None:
+            return None
+        runtime_dir = f"/run/user/{uid}"
+        display = _gamescope_wayland_display(runtime_dir)
+        if display is None:
+            return None
+        try:
+            proc = subprocess.run(
+                [
+                    "runuser", "-u", AMBILIGHT_SESSION_USER, "--",
+                    "env", f"XDG_RUNTIME_DIR={runtime_dir}", f"WAYLAND_DISPLAY={display}",
+                    "grim", "-t", "ppm", "-",
+                ],
+                capture_output=True,
+                timeout=2,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if proc.returncode != 0 or not proc.stdout:
+            return None
+        return _parse_ppm(proc.stdout)
 
     def sample(self, speed_l, speed_r):
-        if not self.ensure_open():
+        if AMBILIGHT_CAPTURE_DISABLED:
             return self.color_l, self.color_r
-        try:
-            while True:
-                chunk = os.read(self.proc.stdout.fileno(), 65536)
-                if not chunk:
-                    self.close()
-                    return self.color_l, self.color_r
-                self.buf += chunk
-        except BlockingIOError:
-            pass
-        except OSError:
-            self.close()
+        now = time.time()
+        if now - self.last_sample_time < 1.0 / AMBILIGHT_CAPTURE_FPS:
             return self.color_l, self.color_r
-        n_frames = len(self.buf) // AMBILIGHT_FRAME_SIZE
-        if n_frames == 0:
+        self.last_sample_time = now
+        frame = self._capture()
+        if frame is None:
             return self.color_l, self.color_r
-        # Only the newest complete frame matters - if the daemon fell behind,
-        # older buffered frames are already stale.
-        frame = self.buf[(n_frames - 1) * AMBILIGHT_FRAME_SIZE : n_frames * AMBILIGHT_FRAME_SIZE]
-        self.buf = self.buf[n_frames * AMBILIGHT_FRAME_SIZE :]
-        g = AMBILIGHT_GRID
-        left = _average_region(frame, 2 * g, 0, g, 0, g)
-        right = _average_region(frame, 2 * g, g, 2 * g, 0, g)
+        width, height, pixels = frame
+        m, w = AMBILIGHT_EDGE_MARGIN_PX, AMBILIGHT_EDGE_WIDTH_PX
+        y0 = int(height * AMBILIGHT_TOP_EXCLUDE)
+        y1 = int(height * (1.0 - AMBILIGHT_BOTTOM_EXCLUDE))
+        left = _average_region_rgb(pixels, width, m, m + w, y0, y1)
+        right = _average_region_rgb(pixels, width, width - m - w, width - m, y0, y1)
         if left is None or right is None:
             return self.color_l, self.color_r
         smoothing_l = min(0.9, AMBILIGHT_SMOOTHING * speed_l)
@@ -666,6 +665,7 @@ def load_state():
         "r": _default_side_state(),
         "screen_link": DEFAULT_SCREEN_LINK,
         "enabled": DEFAULT_ENABLED,
+        "max_brightness": DEFAULT_MAX_BRIGHTNESS,
         "flash_colors": {},
     }
     try:
@@ -682,6 +682,12 @@ def load_state():
             continue
         if key == "enabled":
             state["enabled"] = raw == "1"
+            continue
+        if key == "max_brightness":
+            try:
+                state["max_brightness"] = max(0.0, min(1.0, float(raw)))
+            except ValueError:
+                pass
             continue
         if key.startswith("flash_") and key[len("flash_"):] in FLASH_BUTTONS:
             if re.fullmatch(r"[0-9A-Fa-f]{6}", raw or ""):
@@ -745,6 +751,7 @@ def save_state(state):
     lines = [
         f"screen_link={'1' if state['screen_link'] else '0'}",
         f"enabled={'1' if state.get('enabled', True) else '0'}",
+        f"max_brightness={state.get('max_brightness', DEFAULT_MAX_BRIGHTNESS):.3f}",
     ]
     for side in SIDES:
         s = state[side]
@@ -787,6 +794,12 @@ def screen_scale():
         if maximum > 0:
             return max(0.0, min(1.0, current / maximum))
     return 1.0
+
+
+def base_scale(state):
+    if state["screen_link"]:
+        return screen_scale()
+    return state.get("max_brightness", DEFAULT_MAX_BRIGHTNESS)
 
 
 def _gamma_correct(value):
@@ -996,7 +1009,7 @@ def apply_current():
     state = load_state()
     if not state.get("enabled", True):
         return apply_rgb(0, 0, 0)
-    scale = screen_scale() if state["screen_link"] else 1.0
+    scale = base_scale(state)
     charging = is_charging()
     ok = False
     for side in SIDES:
@@ -1147,7 +1160,7 @@ def run_daemon():
             anim = {"l": _new_anim(), "r": _new_anim()}
             time.sleep(IDLE_INTERVAL)
             continue
-        scale = screen_scale() if state["screen_link"] else 1.0
+        scale = base_scale(state)
         modes = {side: state[side]["mode"] for side in SIDES}
         used_reactive = "reactive" in modes.values()
         used_ambilight = "ambilight" in modes.values()
@@ -1193,6 +1206,7 @@ def print_state():
     state = load_state()
     print(f"screen_link={'1' if state['screen_link'] else '0'}")
     print(f"enabled={'1' if state.get('enabled', True) else '0'}")
+    print(f"max_brightness={state.get('max_brightness', DEFAULT_MAX_BRIGHTNESS):.3f}")
     for side in SIDES:
         s = state[side]
         print(f"mode_{side}={s['mode']}")
@@ -1242,6 +1256,16 @@ def main(argv):
             return 2
         state = load_state()
         state["enabled"] = argv[2] == "on"
+        save_state(state)
+        return 0 if apply_current() else 1
+    if command == "set-max-brightness":
+        try:
+            value = max(0.0, min(1.0, float(argv[2])))
+        except (IndexError, ValueError):
+            print("usage: stick-led-color set-max-brightness <0.0-1.0>", file=sys.stderr)
+            return 2
+        state = load_state()
+        state["max_brightness"] = value
         save_state(state)
         return 0 if apply_current() else 1
     if command == "set-screen-link":
@@ -1337,7 +1361,8 @@ def main(argv):
             return 2
         return cmd_test_ambilight(int(argv[2]) if len(argv) > 2 else 20)
     print(
-        "usage: stick-led-color get|set <l|r> <RRGGBB>|set-mode <l|r> <mode>|set-enabled <on|off>|set-screen-link <on|off>"
+        "usage: stick-led-color get|set <l|r> <RRGGBB>|set-mode <l|r> <mode>|set-enabled <on|off>"
+        "|set-max-brightness <0.0-1.0>|set-screen-link <on|off>"
         "|set-param <l|r> <param> <mode> <value>|set-color-source <l|r> <static|battery|random|shimmer>"
         "|set-charging-indicator <l|r> <on|off>|set-flash-color <button> <RRGGBB>"
         "|set-duotone-color <l|r> <a|b> <RRGGBB>|set-duotone-orientation <l|r> <horizontal|vertical|diagonal>"

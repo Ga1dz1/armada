@@ -53,6 +53,7 @@ def _default_state(supported):
         "supported": supported,
         "screenLink": DEFAULT_SCREEN_LINK,
         "enabled": True,
+        "maxBrightness": 1.0,
         "sides": {"l": _default_side_state(), "r": _default_side_state()},
         "flashColors": {},
     }
@@ -79,6 +80,7 @@ def _parse_cli_output(out):
     sides = {"l": _default_side_state(), "r": _default_side_state()}
     screen_link = DEFAULT_SCREEN_LINK
     enabled = True
+    max_brightness = 1.0
     flash_colors = {}
     for line in out.splitlines():
         key, sep, value = line.partition("=")
@@ -90,6 +92,12 @@ def _parse_cli_output(out):
             continue
         if key == "enabled":
             enabled = value == "1"
+            continue
+        if key == "max_brightness":
+            try:
+                max_brightness = max(0.0, min(1.0, float(value)))
+            except ValueError:
+                pass
             continue
         if key.startswith("flash_") and key[len("flash_"):] in FLASH_BUTTONS:
             if re.fullmatch(r"[0-9A-Fa-f]{6}", value or ""):
@@ -127,7 +135,14 @@ def _parse_cli_output(out):
                 s["params"][base] = float(value)
             except ValueError:
                 pass
-    return {"supported": True, "screenLink": screen_link, "enabled": enabled, "sides": sides, "flashColors": flash_colors}
+    return {
+        "supported": True,
+        "screenLink": screen_link,
+        "enabled": enabled,
+        "maxBrightness": max_brightness,
+        "sides": sides,
+        "flashColors": flash_colors,
+    }
 
 
 def stick_led_state():
@@ -139,6 +154,7 @@ def stick_led_state():
             "supported": True,
             "screenLink": bool(result.get("screenLink")),
             "enabled": bool(result.get("enabled", True)),
+            "maxBrightness": max(0.0, min(1.0, float(result.get("maxBrightness", 1.0)))),
             "sides": {side: _coerce_side((result.get("sides") or {}).get(side)) for side in STICK_SIDES},
             "flashColors": {k: str(v) for k, v in dict(result.get("flashColors") or {}).items()},
         }
@@ -176,6 +192,11 @@ def set_stick_led_screen_link(enabled):
 
 def set_stick_led_enabled(enabled):
     call("set_stick_led_enabled", enabled=bool(enabled))
+    return stick_led_state()
+
+
+def set_stick_led_max_brightness(value):
+    call("set_stick_led_max_brightness", value=max(0.0, min(1.0, float(value))))
     return stick_led_state()
 
 

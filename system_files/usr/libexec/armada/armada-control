@@ -288,6 +288,15 @@ def action_set_stick_led_enabled(request):
     return _stick_led_state()
 
 
+def action_set_stick_led_max_brightness(request):
+    try:
+        value = max(0.0, min(1.0, float(request.get("value"))))
+    except (TypeError, ValueError):
+        raise ValueError("invalid max brightness value")
+    run(["/usr/libexec/armada/stick-led-color", "set-max-brightness", str(value)], timeout=5)
+    return _stick_led_state()
+
+
 def action_set_stick_led_param(request):
     side = str(request.get("side", ""))
     param = str(request.get("param", ""))
@@ -399,7 +408,7 @@ def _default_stick_side_state():
 
 def _stick_led_state():
     result = subprocess.check_output(["/usr/libexec/armada/stick-led-color", "get"], text=True, timeout=5)
-    state = {"screenLink": False, "enabled": True, "sides": {"l": _default_stick_side_state(), "r": _default_stick_side_state()}, "flashColors": {}}
+    state = {"screenLink": False, "enabled": True, "maxBrightness": 1.0, "sides": {"l": _default_stick_side_state(), "r": _default_stick_side_state()}, "flashColors": {}}
     for line in result.splitlines():
         key, sep, value = line.partition("=")
         if not sep:
@@ -410,6 +419,12 @@ def _stick_led_state():
             continue
         if key == "enabled":
             state["enabled"] = value == "1"
+            continue
+        if key == "max_brightness":
+            try:
+                state["maxBrightness"] = max(0.0, min(1.0, float(value)))
+            except ValueError:
+                pass
             continue
         if key.startswith("flash_") and key[len("flash_"):] in FLASH_BUTTONS:
             if re.fullmatch(r"[0-9A-Fa-f]{6}", value or ""):
@@ -515,6 +530,7 @@ ACTIONS = {
     "set_stick_led_mode": action_set_stick_led_mode,
     "set_stick_led_screen_link": action_set_stick_led_screen_link,
     "set_stick_led_enabled": action_set_stick_led_enabled,
+    "set_stick_led_max_brightness": action_set_stick_led_max_brightness,
     "set_stick_led_param": action_set_stick_led_param,
     "set_stick_led_flash_color": action_set_stick_led_flash_color,
     "set_stick_led_duotone_color": action_set_stick_led_duotone_color,

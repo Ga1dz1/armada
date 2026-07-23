@@ -20,6 +20,7 @@ from armada_control.lighting import (
     set_stick_led_duotone_orientation,
     set_stick_led_enabled,
     set_stick_led_flash_color,
+    set_stick_led_max_brightness,
     set_stick_led_mode,
     set_stick_led_param,
     set_stick_led_screen_link,
@@ -97,6 +98,9 @@ class Plugin:
 
     async def set_stick_led_enabled(self, enabled):
         return await asyncio.to_thread(set_stick_led_enabled, enabled)
+
+    async def set_stick_led_max_brightness(self, value):
+        return await asyncio.to_thread(set_stick_led_max_brightness, value)
 
     async def get_display_state(self):
         return await asyncio.to_thread(display_state)

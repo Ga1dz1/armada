@@ -88,6 +88,7 @@ export interface StickLedState {
   supported: boolean;
   screenLink: boolean;
   enabled: boolean;
+  maxBrightness: number;
   sides: { l: StickLedSideState; r: StickLedSideState };
   flashColors: Record<string, string>;
 }

@@ -5,9 +5,14 @@ dnf5 -y install --nogpgcheck \
     --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' \
     terra-release
 
-# ffmpeg-free's kmsgrab demuxer is what armada-stick-led's "ambilight" mode
-# uses to sample the screen's average color straight off the DRM framebuffer.
+# grim is what armada-stick-led's "ambilight" mode uses to sample the
+# screen's average color - via gamescope's own wlr-screencopy-unstable-v1
+# protocol as an ordinary Wayland client, not ffmpeg's kmsgrab demuxer
+# (dropped: kmsgrab opens the primary DRM node directly, which conflicts
+# with gamescope's own atomic commits on this msm/DPU driver - confirmed
+# live, see stick-led-color's own AmbilightSampler comment).
 dnf5 -y install --setopt=install_weak_deps=False \
+    grim \
     sddm \
     pipewire \
     pipewire-alsa \

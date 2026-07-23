@@ -42,6 +42,8 @@ export const setStickLedSeesaw = (side: "l" | "r", enabled: boolean) =>
   call<[string, boolean], StickLedState>("set_stick_led_seesaw", side, enabled);
 export const setStickLedEnabled = (enabled: boolean) =>
   call<[boolean], StickLedState>("set_stick_led_enabled", enabled);
+export const setStickLedMaxBrightness = (value: number) =>
+  call<[number], StickLedState>("set_stick_led_max_brightness", value);
 export const getControllerState = () => call<[], CalibrationState>("get_controller_state");
 export const saveCalibration = (capture: Capture) => call<[Capture], CalibrationState>("save_calibration", capture);
 export const resetCalibration = () => call<[], CalibrationState>("reset_calibration");
