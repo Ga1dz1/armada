@@ -14,17 +14,25 @@ name: Retroid Layout (Flip2)
 # map, which maps BTN_START/BTN_SELECT the same way we do).
 #
 # Briefly set to target `deck` (2026-07-23) to chase a community report of
-# Select acting as Start on real Flip2 hardware, following pocknix-os's own
-# choice of `deck` over `deck-uhid` for this family. That broke worse: `deck`
-# emulates a real USB device over the kernel's vhci_hcd (USB/IP) host
+# Select acting as Start on real Flip2 hardware, on the assumption (wrong -
+# pocknix-os's actual repo has no Flip2 support at all, verified via GitHub
+# code search after the fact) that pocknix-os used `deck` across the family.
+# `deck` emulates a real USB device over the kernel's vhci_hcd (USB/IP) host
 # controller, and this kernel's config has no CONFIG_USBIP_CORE/
-# CONFIG_USBIP_VHCI_HCD at all (confirmed against both the arm64 defconfig
-# armada-packages/kernel builds from and our own config override fragment -
-# neither enables it), so InputPlumber could never actually create the
-# target device and the gamepad disappeared entirely in Gaming Mode. Back on
-# deck-uhid, same as every other device: no vhci_hcd dependency, and the
-# Select/Start swap is a real but lesser bug to chase separately (likely a
-# capability-map-level fix, not a target-type swap).
+# CONFIG_USBIP_VHCI_HCD at all, so InputPlumber could never create the
+# target device and the gamepad disappeared entirely in Gaming Mode.
+#
+# ROCKNIX (also InputPlumber-based, verified live on GitHub - identical
+# retroid_mcu.yaml, same BTN_START/BTN_SELECT mapping we use) sidesteps this
+# whole class of bug by never using deck-uhid for the Retroid family at all:
+# their 01-retroid-controller.yaml targets `ds5` (DualSense emulation)
+# instead. ds5 is UHID-based, same mechanism as the already-working
+# deck-uhid on Mini V2 - no vhci_hcd dependency, so it can't repeat the
+# "gamepad disappears" failure. Trying it here on the theory that the
+# Start/Select swap is specific to deck-uhid's Steam Deck emulation, not
+# the capability map or kernel driver (both confirmed identical to
+# ROCKNIX's own, which doesn't have this bug). Unverified on real Flip2
+# hardware as of this commit - out for the original reporter to test.
 matches:
   - udev:
       sys_path: /sys/firmware/devicetree/base
@@ -52,5 +60,5 @@ options:
   auto_manage: true
 
 target_devices:
-  - deck-uhid
+  - ds5
   - keyboard
