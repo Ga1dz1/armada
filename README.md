@@ -273,7 +273,10 @@ settings:
   restart. It is intermittent and a reboot clears it.
 - **QAM is unmapped on Ayaneo devices.** Use Home+A to open the Quick Access Menu.
 - **No audio after resume on some devices.** Sometimes audio is silent after
-  waking from sleep until the device is restarted. Still unresolved.
+  waking from sleep until the device is restarted. A known cause on SM8250
+  devices (Retroid Pocket Mini V2, 5, Flip2) has a targeted fix (bouncing
+  PipeWire's graph quantum post-resume); not yet confirmed to cover every
+  device or every case.
 
 ## Community
 

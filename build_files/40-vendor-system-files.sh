@@ -35,6 +35,7 @@ systemctl enable armada-fixups.service
 systemctl enable armada-installer-visibility.service
 systemctl enable armada-steamapps.service
 systemctl enable armada-powerd.service
+systemctl enable armada-audio-resume.service
 # Disabled - see git history: suspected of causing a full, unrecoverable
 # system hang (not just gamescope) on Desktop <-> Gaming Mode transitions.
 # An unthrottled (kernel.sched_rt_runtime_us=-1, reverted alongside this)
