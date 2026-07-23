@@ -13,6 +13,7 @@ import {
   setStickLedMode as applyStickLedMode,
   setStickLedParam as applyStickLedParam,
   setStickLedScreenLink as applyStickLedScreenLink,
+  setStickLedEnabled as applyStickLedEnabled,
   setStickLedSeesaw as applyStickLedSeesaw,
 } from "../backend";
 import { SelectEdit, SliderEdit, ToggleRow } from "../components/widgets";
@@ -182,6 +183,17 @@ export function Lighting({ config, setConfig }: {
       setConfig((current) => (current ? { ...current, stickLed: applied } : current));
     } catch (error) {
       setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, screenLink: previous } } : current));
+    }
+  };
+  const setStickLedEnabled = async (value: boolean) => {
+    if (!stickLed) return;
+    const previous = stickLed.enabled;
+    setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, enabled: value } } : current));
+    try {
+      const applied = await applyStickLedEnabled(value);
+      setConfig((current) => (current ? { ...current, stickLed: applied } : current));
+    } catch (error) {
+      setConfig((current) => (current ? { ...current, stickLed: { ...current.stickLed, enabled: previous } } : current));
     }
   };
   const setStickLedColor = async (hex: string) => {
@@ -403,6 +415,15 @@ export function Lighting({ config, setConfig }: {
   return (
     <PanelSection title="Stick Lighting">
       <ToggleRow
+        label="Enable"
+        description="Turn both sticks off entirely, without losing the mode/color settings below"
+        value={stickLed.enabled}
+        onChange={setStickLedEnabled}
+      />
+      {!stickLed.enabled && <Field label="Sticks are off - settings below are kept, not applied." />}
+      {stickLed.enabled && (
+        <>
+      <ToggleRow
         label="Configure each stick separately"
         description="Off: changes below apply to both sticks at once. On: pick a stick and edit just that one."
         value={separate}
@@ -623,6 +644,8 @@ export function Lighting({ config, setConfig }: {
             step={1}
             onChange={(value) => setDuotoneChannel("b", 2, value)}
           />
+        </>
+      )}
         </>
       )}
     </PanelSection>

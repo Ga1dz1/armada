@@ -18,6 +18,7 @@ from armada_control.lighting import (
     set_stick_led_compass,
     set_stick_led_duotone_color,
     set_stick_led_duotone_orientation,
+    set_stick_led_enabled,
     set_stick_led_flash_color,
     set_stick_led_mode,
     set_stick_led_param,
@@ -93,6 +94,9 @@ class Plugin:
 
     async def set_stick_led_seesaw(self, side, enabled):
         return await asyncio.to_thread(set_stick_led_seesaw, side, enabled)
+
+    async def set_stick_led_enabled(self, enabled):
+        return await asyncio.to_thread(set_stick_led_enabled, enabled)
 
     async def get_display_state(self):
         return await asyncio.to_thread(display_state)

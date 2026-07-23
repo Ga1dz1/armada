@@ -52,6 +52,7 @@ def _default_state(supported):
     return {
         "supported": supported,
         "screenLink": DEFAULT_SCREEN_LINK,
+        "enabled": True,
         "sides": {"l": _default_side_state(), "r": _default_side_state()},
         "flashColors": {},
     }
@@ -77,6 +78,7 @@ def _coerce_side(raw):
 def _parse_cli_output(out):
     sides = {"l": _default_side_state(), "r": _default_side_state()}
     screen_link = DEFAULT_SCREEN_LINK
+    enabled = True
     flash_colors = {}
     for line in out.splitlines():
         key, sep, value = line.partition("=")
@@ -85,6 +87,9 @@ def _parse_cli_output(out):
         key, value = key.strip(), value.strip()
         if key == "screen_link":
             screen_link = value == "1"
+            continue
+        if key == "enabled":
+            enabled = value == "1"
             continue
         if key.startswith("flash_") and key[len("flash_"):] in FLASH_BUTTONS:
             if re.fullmatch(r"[0-9A-Fa-f]{6}", value or ""):
@@ -122,7 +127,7 @@ def _parse_cli_output(out):
                 s["params"][base] = float(value)
             except ValueError:
                 pass
-    return {"supported": True, "screenLink": screen_link, "sides": sides, "flashColors": flash_colors}
+    return {"supported": True, "screenLink": screen_link, "enabled": enabled, "sides": sides, "flashColors": flash_colors}
 
 
 def stick_led_state():
@@ -133,6 +138,7 @@ def stick_led_state():
         return {
             "supported": True,
             "screenLink": bool(result.get("screenLink")),
+            "enabled": bool(result.get("enabled", True)),
             "sides": {side: _coerce_side((result.get("sides") or {}).get(side)) for side in STICK_SIDES},
             "flashColors": {k: str(v) for k, v in dict(result.get("flashColors") or {}).items()},
         }
@@ -165,6 +171,11 @@ def set_stick_led_mode(side, mode):
 
 def set_stick_led_screen_link(enabled):
     call("set_stick_led_screen_link", enabled=bool(enabled))
+    return stick_led_state()
+
+
+def set_stick_led_enabled(enabled):
+    call("set_stick_led_enabled", enabled=bool(enabled))
     return stick_led_state()
 
 
