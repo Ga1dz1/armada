@@ -17,9 +17,12 @@ import { getGlobalResolution, setGlobalResolution } from "../lib/steamSettings";
 import { clone } from "../lib/util";
 import { availableGames, editTargetOptions } from "../lib/games";
 import {
+  ARM64_MODE_THUNKS,
   DEFAULT_WINDOWS_COMPAT_TOOL,
+  DEFAULT_X86_64_COMPAT_TOOL,
   FOLLOW_STEAM_COMPAT,
   USE_DEFAULT_COMPAT,
+  X86_64_MODE_THUNKS,
   compatSelection,
   getAppCompatTools,
   getProtonTools,
@@ -42,6 +45,10 @@ const resolutionOptions = [
   { data: "Native", label: "Native" },
   { data: "1280x720", label: "1280x720" },
   { data: "960x540", label: "960x540" },
+];
+const compatModeOptions = [
+  { data: "arm64", label: "ARM64 (native, recommended)" },
+  { data: "x86_64", label: "x86_64 (emulated via FEX)" },
 ];
 const fexKnobs = [
   { key: "TSOEnabled", label: "TSO Enabled" },
@@ -300,6 +307,18 @@ export function Compatibility({ config, setConfig }: { config: Config; setConfig
     await migrateWindowsCompatTool(config.installedGames.map((installed) => installed.appid), oldTool, name);
     persistHandledGames();
   };
+  // Not a separate stored field - inferred from which default Proton is
+  // selected, since that's what actually drives behavior. Anything other
+  // than our own bundled ARM64 build counts as "x86_64 mode" for this
+  // switch's purposes, even if the user picked a specific tool by hand via
+  // "Default Proton" below rather than through this switch.
+  const compatMode = globalTool === DEFAULT_WINDOWS_COMPAT_TOOL ? "arm64" : "x86_64";
+  const onSelectCompatMode = async (choice: any) => {
+    const mode = String(choice);
+    if (mode === compatMode) return;
+    patchSettings({ thunks: mode === "arm64" ? ARM64_MODE_THUNKS : X86_64_MODE_THUNKS });
+    await onSelectGlobalDefault(mode === "arm64" ? DEFAULT_WINDOWS_COMPAT_TOOL : DEFAULT_X86_64_COMPAT_TOOL);
+  };
   const selectableTools = new Map<string, CompatTool>();
   for (const tool of [...perGameTools, ...compatTools]) selectableTools.set(tool.id, tool);
   if (currentTool && currentTool !== USE_DEFAULT_COMPAT && currentTool !== FOLLOW_STEAM_COMPAT && !selectableTools.has(currentTool)) {
@@ -361,6 +380,13 @@ export function Compatibility({ config, setConfig }: { config: Config; setConfig
       <PanelSection title="PROFILE SETTINGS">
         {editingDefault ? (
           <>
+            <SelectEdit
+              labelBelow
+              label="Compatibility Mode"
+              value={compatMode}
+              options={compatModeOptions}
+              onChange={onSelectCompatMode}
+            />
             <SelectEdit labelBelow label="Default Proton" value={globalTool} options={toolOptions} onChange={onSelectGlobalDefault} />
             <ToggleField
               label="Apply to New Games"

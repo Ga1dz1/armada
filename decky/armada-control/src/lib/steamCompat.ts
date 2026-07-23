@@ -15,8 +15,28 @@ const settings = () => window.SteamClient?.Settings;
 
 // Keep in sync with PROTON_TOOL_NAME (build) and PROTON_11_STABLE (armada-fixups).
 export const DEFAULT_WINDOWS_COMPAT_TOOL = "proton-cachyos-11.0-arm64";
+// Valve's own actively-maintained catalog entry - unlike our bundled ARM64
+// build, Steam can auto-download this one itself once it's selected, no
+// manual fetch needed. Used as the default for "x86_64 (emulated)" mode.
+export const DEFAULT_X86_64_COMPAT_TOOL = "proton_experimental";
 export const USE_DEFAULT_COMPAT = "__armada_default__";
 export const FOLLOW_STEAM_COMPAT = "__steam_default__";
+// Confirmed live against a working ROCKNIX SM8550 install (same FEX build,
+// same pressure-vessel/SLR runtime shape): running with every one of these
+// thunks on was a plausible cause of x86_64-routed games failing to launch
+// at all - thunking swaps a guest (x86) library for a host-native one at
+// dlopen, which can fight pressure-vessel's own bundled x86_64 runtime
+// libraries for the same symbols. Our native ARM64 Proton build needs none
+// of these (its own binaries call the host GPU/audio stack directly, no
+// FEX involved), so they're off in that mode; a genuinely x86_64-routed
+// Proton's own Wine/Proton binaries DO need FEX to bridge those calls to
+// the ARM64 host, so they're on in that mode.
+export const ARM64_MODE_THUNKS: Record<string, boolean> = {
+  Vulkan: false, GL: false, EGL: false, drm: false, WaylandClient: false, asound: false,
+};
+export const X86_64_MODE_THUNKS: Record<string, boolean> = {
+  Vulkan: true, GL: true, EGL: true, drm: true, WaylandClient: true, asound: true,
+};
 let windowsCompatTool = DEFAULT_WINDOWS_COMPAT_TOOL;
 let autoApplyCompat = true;
 const handledAppids = new Set<string>();
