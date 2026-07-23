@@ -12,7 +12,8 @@ name: Retroid Layout
 # empty, then the source devices will *always* be checked. Same gamepad MCU
 # across the whole SM8250 Retroid family (confirmed via ROCKNIX's own device
 # tree, which ships one identical copy of this file across all of them, not
-# per-model), so one composite device config covers all three.
+# per-model). Flip2 is split into its own 01-retroid-flip2-controller.yaml
+# instead of being matched here too - see that file for why.
 matches:
   - udev:
       sys_path: /sys/firmware/devicetree/base
@@ -24,11 +25,6 @@ matches:
       attributes:
         - name: model
           value: Retroid Pocket 5
-  - udev:
-      sys_path: /sys/firmware/devicetree/base
-      attributes:
-        - name: model
-          value: Retroid Pocket Flip2
 
 # Only allow a single source device per composite device of this type.
 single_source: false

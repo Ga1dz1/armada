@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ShadowBlip/InputPlumber/main/rootfs/usr/share/inputplumber/schema/composite_device_v1.json
+# Schema version number
+version: 1
+
+# The type of configuration schema
+kind: CompositeDevice
+
+# Name of the composite device mapping
+name: Retroid Layout (Flip2)
+
+# Split out from 01-retroid-controller.yaml: same serial-MCU gamepad as
+# Mini V2/RP5 (phys "retroid-pocket-gamepad/input0", identical raw button
+# codes - confirmed unchanged in shuuri-labs/pocknix-os's own Flip2 capability
+# map, which maps BTN_START/BTN_SELECT the same way we do), but community
+# feedback on real Flip2 hardware (2026-07-23, unverified device per our own
+# README) reports Select acting as Start plus the control scheme flapping
+# between keyboard+mouse and controller in Gaming Mode specifically - not
+# reproducing in Desktop mode, where a game reading the raw device directly
+# gets Start/Select right. That points at the deck-uhid target/Steam Input
+# translation layer, not the kernel driver or capability map. pocknix-os,
+# which has real hardware for this whole device family, uses target `deck`
+# (not `deck-uhid`) across the board - since Mini V2 (our tested, working
+# device) is fine on deck-uhid, this only changes it for Flip2 rather than
+# risking a regression on hardware that already works.
+matches:
+  - udev:
+      sys_path: /sys/firmware/devicetree/base
+      attributes:
+        - name: model
+          value: Retroid Pocket Flip2
+
+# Only allow a single source device per composite device of this type.
+single_source: false
+
+# One or more source devices to combine into a single virtual device. The events
+# from these devices will be watched and translated according to the key map.
+source_devices:
+  - group: gamepad
+    evdev:
+      phys_path: retroid-pocket-gamepad/input0
+      handler: event*
+    capability_map_id: retroid_mcu
+    # See 01-retroid-controller.yaml's own comment on passthrough - same
+    # reason (armada-stick-led's reactive LED mode needs the raw node too).
+    passthrough: true
+
+# Optional configuration for the composite device
+options:
+  auto_manage: true
+
+# `deck`, not `deck-uhid` - see the file-level comment above.
+target_devices:
+  - deck
+  - keyboard
