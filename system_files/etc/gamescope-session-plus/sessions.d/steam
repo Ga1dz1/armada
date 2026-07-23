@@ -166,6 +166,17 @@ fi
 FORCE_COMPOSITION_OPTION=""
 gamescope_has_option "--force-composition" && FORCE_COMPOSITION_OPTION="--force-composition"
 
+# Decky's "Performance Overlay" toggle (Compatibility tab) writes this into
+# the same game-tweaks.json armada-game-launch already reads per-game -
+# global.mangoapp is the one field read here, at session-launch time, since
+# gamescope's own overlay is a whole-session flag, not a per-game one.
+MANGOAPP_OPTION=""
+if [[ -f /etc/armada/game-tweaks.json ]] \
+    && [[ "$(jq -r '.global.mangoapp // false' /etc/armada/game-tweaks.json 2>/dev/null)" == "true" ]] \
+    && gamescope_has_option "--mangoapp"; then
+    MANGOAPP_OPTION="--mangoapp"
+fi
+
 GAMESCOPECMD="$(get_gamescope_binary) \
     $CURSOR \
     $RESOLUTION \
@@ -180,6 +191,7 @@ GAMESCOPECMD="$(get_gamescope_binary) \
     $HDR_OPTIONS \
     $MAX_SCALE_OPTION \
     $FORCE_COMPOSITION_OPTION \
+    $MANGOAPP_OPTION \
     --prefer-output $OUTPUT_CONNECTOR \
     --xwayland-count $XWAYLAND_COUNT \
     --default-touch-mode $TOUCH_MODE \

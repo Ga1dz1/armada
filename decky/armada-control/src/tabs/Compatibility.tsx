@@ -404,6 +404,12 @@ export function Compatibility({ config, setConfig }: { config: Config; setConfig
               }}
             />
             <SelectEdit label="Game Resolution" value={defaultResolution} options={resolutionOptions} onChange={setSteamDefaultResolution} />
+            <ToggleField
+              label="Performance Overlay"
+              description="FPS/CPU/GPU/temps overlay via gamescope's built-in --mangoapp - applies on next session restart"
+              checked={tweaks.global.mangoapp === true}
+              onChange={(enabled) => patchSettings({ mangoapp: enabled })}
+            />
           </>
         ) : (
           <>
