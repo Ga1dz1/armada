@@ -50,6 +50,13 @@ const compatModeOptions = [
   { data: "arm64", label: "ARM64 (native, recommended)" },
   { data: "x86_64", label: "x86_64 (emulated via FEX)" },
 ];
+// SM8250's cpu0-3 are the 1.8GHz LITTLE cluster, cpu4-7 the 2.4-2.84GHz
+// big+prime cluster - same split ROCKNIX's own SM8250 profile uses.
+const cpuAffinityOptions = [
+  { data: "", label: "Default (any core)" },
+  { data: "big", label: "Big cores only (cpu4-7)" },
+  { data: "little", label: "Little cores only (cpu0-3)" },
+];
 const fexKnobs = [
   { key: "TSOEnabled", label: "TSO Enabled" },
   { key: "X87ReducedPrecision", label: "X87 Reduced Precision" },
@@ -413,6 +420,12 @@ export function Compatibility({ config, setConfig }: { config: Config; setConfig
           : null}
       </PanelSection>
       <PanelSection title="ADVANCED">
+        <SelectEdit
+          label="CPU Cores"
+          value={String(values.cores || "")}
+          options={cpuAffinityOptions}
+          onChange={(value) => patchSettings({ cores: value || undefined })}
+        />
         <ButtonItem layout="below" onClick={() => setShowThunks((value) => !value)}>
           {showThunks ? "Hide Host Thunks" : "Host Thunks"}
         </ButtonItem>

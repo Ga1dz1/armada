@@ -69,6 +69,25 @@ def thunk_settings(settings, modules):
     return {name: 1 if thunks.get(name, True) else 0 for name in modules}
 
 
+# SM8250's cpu0-3 are the 1.8GHz LITTLE cluster, cpu4-7 the 2.4-2.84GHz
+# big+prime cluster (confirmed via cpuinfo_max_freq) - same split ROCKNIX's
+# own SM8250 quirk profile uses (SLOW_CORES="taskset -c 0-3", FAST_CORES=
+# "taskset -c 4-7"). "big" pins emulation-heavy work off the slow cluster
+# entirely instead of leaving the scheduler free to place it anywhere.
+CORE_SETS = {
+    "little": {0, 1, 2, 3},
+    "big": {4, 5, 6, 7},
+}
+
+
+def apply_cpu_affinity(settings):
+    cores = settings.get("cores")
+    core_set = CORE_SETS.get(cores)
+    if not core_set:
+        return
+    os.sched_setaffinity(0, core_set)
+
+
 def runtime_config_dir():
     runtime = os.environ.get("XDG_RUNTIME_DIR")
     if runtime:
@@ -182,12 +201,18 @@ def main():
     os.environ.setdefault("DXVK_HUD", "none")
 
     game_id = appid()
+    settings = {}
     try:
         contract = load_fex_contract()
         settings = merged_settings(load_tweaks(contract["defaults"]), game_id)
         apply_fex(settings, game_id, contract["profiles"], os.environ)
     except Exception as exc:
         print(f"armada-game-launch: failed to apply settings: {exc}", file=sys.stderr)
+
+    try:
+        apply_cpu_affinity(settings)
+    except OSError as exc:
+        print(f"armada-game-launch: CPU affinity skipped: {exc}", file=sys.stderr)
 
     try:
         inject_x86_protocol_libs()
