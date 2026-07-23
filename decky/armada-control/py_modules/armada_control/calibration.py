@@ -10,17 +10,40 @@ from .privileged import call
 from .system import read_text
 
 INPUT_CALIBRATION_CONFIG = Path("/etc/armada/input-calibration.json")
-RSINPUT_PARAMETERS = Path("/sys/module/rsinput/parameters")
+# Each supported gamepad driver exposes the same calibration parameter ABI
+# (axis_*/trigger_* module params, see CALIBRATION_PARAMS) under its own
+# /sys/module/<name>/parameters - only one of these will exist on any given
+# device. "match" checks the resolved input event's phys/name so we don't
+# depend on module load order.
+CONTROLLER_DRIVERS = (
+    {
+        "module": "rsinput",
+        "match": lambda event: "rsinput-gamepad" in event["phys"] or "rsinput" in event["name"].casefold(),
+    },
+    {
+        "module": "retroid",
+        "match": lambda event: "retroid-pocket-gamepad" in event["phys"] or "retroid pocket gamepad" in event["name"].casefold(),
+        # This driver (drivers/input/joystick/retroid.c) registers ABS_Z/
+        # ABS_RZ - same as rsinput's trigger codes below - but never actually
+        # updates them (input_report_abs is only ever called for
+        # ABS_HAT2X/ABS_HAT2Y). EVIOCGABS on the dead codes still succeeds
+        # (just always returns 0), so nothing here fails loudly - it just
+        # reads as a frozen trigger bar. Confirmed live on a Retroid Pocket
+        # Mini V2: stick calibration worked, triggers never moved, until
+        # this override was added.
+        "trigger_codes": {"left_trigger": 0x14, "right_trigger": 0x15},  # ABS_HAT2X, ABS_HAT2Y
+    },
+)
 INPUTPLUMBER_INTERCEPT = Path("/usr/libexec/armada/inputplumber-intercept")
 INPUTPLUMBER_SERVICE = "org.shadowblip.InputPlumber"
 INPUTPLUMBER_COMPOSITE_IFACE = "org.shadowblip.Input.CompositeDevice"
 ABS_CODES = {
     "left_x": 0,
     "left_y": 1,
-    "left_trigger": 2,
+    "left_trigger": 2,   # ABS_Z - overridden per-driver above where wrong
     "right_x": 3,
     "right_y": 4,
-    "right_trigger": 5,
+    "right_trigger": 5,  # ABS_RZ - overridden per-driver above where wrong
     "gas": 9,
     "brake": 10,
 }
@@ -238,7 +261,7 @@ def read_abs(fd, code):
     }
 
 
-def read_controls(fd):
+def read_controls(fd, event=None):
     controls = {}
     for name, code in ABS_CODES.items():
         try:
@@ -249,18 +272,25 @@ def read_controls(fd):
         controls["left_trigger"] = controls["brake"]
     if "right_trigger" not in controls and "gas" in controls:
         controls["right_trigger"] = controls["gas"]
+    driver = matched_controller_driver(event)
+    for name, code in (driver or {}).get("trigger_codes", {}).items():
+        try:
+            controls[name] = read_abs(fd, code)
+        except OSError:
+            pass
     return controls
 
 
 def build_state(event, controls):
-    can = calibration_can_apply(event)
+    driver = matched_controller_driver(event)
+    can = driver is not None and Path(f"/sys/module/{driver['module']}/parameters").exists()
     return {
         "supported": bool(controls),
         "reason": "" if controls else "Controller has no readable analog controls",
         "controls": controls,
         "event": event,
         "canApply": can,
-        "backend": "rsinput" if can else "tester",
+        "backend": driver["module"] if can else "tester",
     }
 
 
@@ -295,12 +325,12 @@ def close_session_device():
 def controller_state():
     if _session_fd is not None and _session_device is not None:
         try:
-            return build_state(_session_device, read_controls(_session_fd.fileno()))
+            return build_state(_session_device, read_controls(_session_fd.fileno(), _session_device))
         except OSError:
             # Node went away (device re-registered); re-resolve once.
             if open_session_device() and _session_fd is not None:
                 try:
-                    return build_state(_session_device, read_controls(_session_fd.fileno()))
+                    return build_state(_session_device, read_controls(_session_fd.fileno(), _session_device))
                 except OSError:
                     close_session_device()
     event = calibration_event()
@@ -308,28 +338,42 @@ def controller_state():
         return {"supported": False, "reason": "No controller input device found", "controls": {}, "event": None}
     try:
         with open(event["path"], "rb", buffering=0) as f:
-            controls = read_controls(f.fileno())
+            controls = read_controls(f.fileno(), event)
     except OSError as exc:
         return {"supported": False, "reason": str(exc), "controls": {}, "event": event}
     return build_state(event, controls)
 
 
-def calibration_can_apply(event=None):
-    if not RSINPUT_PARAMETERS.exists():
-        return False
+def matched_controller_driver(event=None):
     if event is None:
         event = calibration_event()
     if not event:
-        return False
-    return "rsinput-gamepad" in event["phys"] or "rsinput" in event["name"].casefold()
+        return None
+    for driver in CONTROLLER_DRIVERS:
+        if driver["match"](event):
+            return driver
+    return None
+
+
+def calibration_parameters_path(event=None):
+    driver = matched_controller_driver(event)
+    if driver is None:
+        return None
+    path = Path(f"/sys/module/{driver['module']}/parameters")
+    return path if path.exists() else None
+
+
+def calibration_can_apply(event=None):
+    return calibration_parameters_path(event) is not None
 
 
 def read_calibration_params():
     params = {}
-    if not RSINPUT_PARAMETERS.exists():
+    parameters = calibration_parameters_path()
+    if parameters is None:
         return params
     for name in CALIBRATION_PARAMS:
-        text = read_text(RSINPUT_PARAMETERS / name)
+        text = read_text(parameters / name)
         if text:
             try:
                 params[name] = int(text)
@@ -403,7 +447,8 @@ def calibration_status():
     state = controller_state()
     state["saved"] = INPUT_CALIBRATION_CONFIG.exists()
     state["params"] = read_calibration_params()
-    if not state.get("canApply") and RSINPUT_PARAMETERS.exists():
+    known_module_present = any(Path(f"/sys/module/{d['module']}/parameters").exists() for d in CONTROLLER_DRIVERS)
+    if not state.get("canApply") and known_module_present:
         state["reason"] = "Live tester only on this device"
     return state
 

@@ -4,7 +4,11 @@ from pathlib import Path
 
 
 CONFIG = Path("/etc/armada/input-calibration.json")
-PARAMETERS = Path("/sys/module/rsinput/parameters")
+# Each supported gamepad driver exposes the same calibration parameter ABI
+# (axis_*/trigger_* module params) under its own /sys/module/<name>/parameters -
+# rsinput on AYN devices, retroid (drivers/input/joystick/retroid.c) on
+# Retroid Pocket. Only one of these will exist on any given device.
+CALIBRATION_DRIVER_MODULES = ("rsinput", "retroid")
 PARAM_NAMES = (
     "axis_leftx_min",
     "axis_leftx_center",
@@ -36,7 +40,14 @@ PARAM_NAMES = (
 
 
 def main():
-    if not CONFIG.exists() or not PARAMETERS.exists():
+    if not CONFIG.exists():
+        return
+    parameters = next(
+        (Path(f"/sys/module/{name}/parameters") for name in CALIBRATION_DRIVER_MODULES
+         if Path(f"/sys/module/{name}/parameters").exists()),
+        None,
+    )
+    if parameters is None:
         return
     with CONFIG.open(encoding="utf-8") as f:
         params = json.load(f)
@@ -44,8 +55,8 @@ def main():
         raise SystemExit("input calibration config must be a JSON object")
     for name in PARAM_NAMES:
         if name in params:
-            (PARAMETERS / name).write_text(str(int(params[name])), encoding="utf-8")
-    (PARAMETERS / "update_params").write_text("1", encoding="utf-8")
+            (parameters / name).write_text(str(int(params[name])), encoding="utf-8")
+    (parameters / "update_params").write_text("1", encoding="utf-8")
 
 
 if __name__ == "__main__":

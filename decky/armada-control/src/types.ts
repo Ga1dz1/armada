@@ -78,6 +78,9 @@ export interface StickLedSideState {
   duotoneColorA: string;
   duotoneColorB: string;
   duotoneOrientation: string;
+  chase: boolean;
+  compass: boolean;
+  seesaw: boolean;
   params: Record<string, number>;
 }
 

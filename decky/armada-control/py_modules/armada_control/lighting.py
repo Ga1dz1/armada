@@ -5,8 +5,8 @@ from .privileged import call
 
 STICK_LED_SCRIPT = "/usr/libexec/armada/stick-led-color"
 STICK_SIDES = ("l", "r")
-STICK_LED_MODES = {"static", "breathing", "rainbow", "chase", "spin", "reactive", "multidot", "ambilight", "duotone"}
-STICK_LED_COLOR_SOURCES = {"static", "battery"}
+STICK_LED_MODES = {"static", "breathing", "rainbow", "spin", "reactive", "multidot", "ambilight", "duotone", "wave", "starlight"}
+STICK_LED_COLOR_SOURCES = {"static", "battery", "random", "shimmer"}
 STICK_LED_PARAMS = ("speed", "intensity", "size")
 FLASH_BUTTONS = (
     "south", "east", "north", "west",
@@ -41,6 +41,9 @@ def _default_side_state():
         "duotoneColorA": DEFAULT_DUOTONE_COLOR_A,
         "duotoneColorB": DEFAULT_DUOTONE_COLOR_B,
         "duotoneOrientation": DEFAULT_DUOTONE_ORIENTATION,
+        "chase": False,
+        "compass": False,
+        "seesaw": False,
         "params": {},
     }
 
@@ -64,6 +67,9 @@ def _coerce_side(raw):
         "duotoneColorA": str(raw.get("duotoneColorA") or DEFAULT_DUOTONE_COLOR_A),
         "duotoneColorB": str(raw.get("duotoneColorB") or DEFAULT_DUOTONE_COLOR_B),
         "duotoneOrientation": raw.get("duotoneOrientation") if raw.get("duotoneOrientation") in DUOTONE_ORIENTATIONS else DEFAULT_DUOTONE_ORIENTATION,
+        "chase": bool(raw.get("chase", False)),
+        "compass": bool(raw.get("compass", False)),
+        "seesaw": bool(raw.get("seesaw", False)),
         "params": {k: float(v) for k, v in dict(raw.get("params") or {}).items()},
     }
 
@@ -105,6 +111,12 @@ def _parse_cli_output(out):
             s["duotoneColorB"] = value.upper()
         elif base == "duotone_orientation" and value in DUOTONE_ORIENTATIONS:
             s["duotoneOrientation"] = value
+        elif base == "chase":
+            s["chase"] = value == "1"
+        elif base == "compass":
+            s["compass"] = value == "1"
+        elif base == "seesaw":
+            s["seesaw"] = value == "1"
         elif "_" in base and base.split("_", 1)[0] in STICK_LED_PARAMS:
             try:
                 s["params"][base] = float(value)
@@ -209,4 +221,25 @@ def set_stick_led_charging_indicator(side, enabled):
     if side not in STICK_SIDES:
         raise ValueError("invalid stick side")
     call("set_stick_led_charging_indicator", side=side, enabled=bool(enabled))
+    return stick_led_state()
+
+
+def set_stick_led_chase(side, enabled):
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
+    call("set_stick_led_chase", side=side, enabled=bool(enabled))
+    return stick_led_state()
+
+
+def set_stick_led_compass(side, enabled):
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
+    call("set_stick_led_compass", side=side, enabled=bool(enabled))
+    return stick_led_state()
+
+
+def set_stick_led_seesaw(side, enabled):
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
+    call("set_stick_led_seesaw", side=side, enabled=bool(enabled))
     return stick_led_state()

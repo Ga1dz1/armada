@@ -7,6 +7,8 @@ ARG INPUTPLUMBER_PKG=ghcr.io/virtudude/armada-packages/inputplumber@sha256:5dc8c
 ARG EXTEST_PKG=ghcr.io/virtudude/armada-packages/extest@sha256:bdd44824ebbff167e007fd44df794713e2340e8fe94247d9e231f3ce10ff1844
 ARG NETWORKMANAGER_PKG=ghcr.io/virtudude/armada-packages/networkmanager@sha256:ed0b1c9877fbeba38067f3b0de663c9483000019e0a0a968740f231bcfe3d095
 ARG JUPITER_HW_SUPPORT_PKG=ghcr.io/virtudude/armada-packages/jupiter-hw-support@sha256:3d555f9d9ac79e7fbca2e59a45df97782fb5bee7ce3f65613703122b93b8a866
+ARG PCSX2_PKG=ghcr.io/ga1dz1/armada-packages/pcsx2@sha256:9de73aed34730e51207dc4b789aea14dae7759482cc69ce91147acefdd0bf4d8
+ARG EDEN_PKG=ghcr.io/ga1dz1/armada-packages/eden@sha256:c4182ca0b3a3ea1db3a523444aa37d7dc10d2e755e71df14e8bc887aa4bb8fbc
 
 FROM ${FEX_PKG} AS fex
 FROM ${MESA_PKG} AS mesa
@@ -17,6 +19,8 @@ FROM ${INPUTPLUMBER_PKG} AS inputplumber
 FROM ${NETWORKMANAGER_PKG} AS networkmanager
 FROM ${JUPITER_HW_SUPPORT_PKG} AS jupiter-hw-support
 FROM ${EXTEST_PKG} AS extest
+FROM ${PCSX2_PKG} AS pcsx2
+FROM ${EDEN_PKG} AS eden
 
 FROM docker.io/library/node:22-slim AS decky-build
 WORKDIR /build
@@ -44,6 +48,8 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=bind,from=networkmanager,source=/rpms,target=/packages/networkmanager \
     --mount=type=bind,from=jupiter-hw-support,source=/rpms,target=/packages/jupiter-hw-support \
     --mount=type=bind,from=extest,source=/,target=/packages/extest \
+    --mount=type=bind,from=pcsx2,source=/pcsx2,target=/packages/pcsx2 \
+    --mount=type=bind,from=eden,source=/eden,target=/packages/eden \
     --mount=type=bind,from=decky-build,source=/build/dist,target=/packages/decky-dist \
     --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \

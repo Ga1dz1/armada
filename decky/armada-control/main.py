@@ -12,14 +12,17 @@ from armada_control.controller import set_controller_type
 from armada_control.display import display_state, restart_gamescope_session, set_display_config
 from armada_control.lighting import (
     set_stick_led_charging_indicator,
+    set_stick_led_chase,
     set_stick_led_color,
     set_stick_led_color_source,
+    set_stick_led_compass,
     set_stick_led_duotone_color,
     set_stick_led_duotone_orientation,
     set_stick_led_flash_color,
     set_stick_led_mode,
     set_stick_led_param,
     set_stick_led_screen_link,
+    set_stick_led_seesaw,
 )
 from armada_control.power import save_power_config
 from armada_control.steam import installed_games
@@ -81,6 +84,15 @@ class Plugin:
 
     async def set_stick_led_charging_indicator(self, side, enabled):
         return await asyncio.to_thread(set_stick_led_charging_indicator, side, enabled)
+
+    async def set_stick_led_chase(self, side, enabled):
+        return await asyncio.to_thread(set_stick_led_chase, side, enabled)
+
+    async def set_stick_led_compass(self, side, enabled):
+        return await asyncio.to_thread(set_stick_led_compass, side, enabled)
+
+    async def set_stick_led_seesaw(self, side, enabled):
+        return await asyncio.to_thread(set_stick_led_seesaw, side, enabled)
 
     async def get_display_state(self):
         return await asyncio.to_thread(display_state)

@@ -3,14 +3,17 @@ import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
   setStickLedChargingIndicator as applyStickLedChargingIndicator,
+  setStickLedChase as applyStickLedChase,
   setStickLedColor as applyStickLedColor,
   setStickLedColorSource as applyStickLedColorSource,
+  setStickLedCompass as applyStickLedCompass,
   setStickLedDuotoneColor as applyStickLedDuotoneColor,
   setStickLedDuotoneOrientation as applyStickLedDuotoneOrientation,
   setStickLedFlashColor as applyStickLedFlashColor,
   setStickLedMode as applyStickLedMode,
   setStickLedParam as applyStickLedParam,
   setStickLedScreenLink as applyStickLedScreenLink,
+  setStickLedSeesaw as applyStickLedSeesaw,
 } from "../backend";
 import { SelectEdit, SliderEdit, ToggleRow } from "../components/widgets";
 import type { Config, StickLedSideState, StickLedState } from "../types";
@@ -52,17 +55,20 @@ const MODE_OPTIONS: { data: string; label: string }[] = [
   { data: "static", label: "Static" },
   { data: "breathing", label: "Breathing" },
   { data: "rainbow", label: "Rainbow" },
-  { data: "chase", label: "Chase" },
+  { data: "wave", label: "Wave (rainbow spread around the ring)" },
+  { data: "starlight", label: "Starlight (random zone twinkle)" },
   { data: "spin", label: "Spin" },
   { data: "reactive", label: "Reactive (sticks + buttons)" },
   { data: "multidot", label: "Multidot (RGB chase)" },
   { data: "ambilight", label: "Ambilight (matches screen)" },
   { data: "duotone", label: "Duotone (two-color split)" },
 ];
-const COLOR_VISIBLE_MODES = new Set(["static", "breathing", "chase", "spin"]);
+const COLOR_VISIBLE_MODES = new Set(["static", "breathing", "spin"]);
 const COLOR_SOURCE_OPTIONS: { data: string; label: string }[] = [
   { data: "static", label: "Custom color" },
   { data: "battery", label: "Battery level" },
+  { data: "random", label: "Random (unpredictable color shift)" },
+  { data: "shimmer", label: "Shimmer (pale/cool to rich/warm)" },
 ];
 
 const DUOTONE_ORIENTATION_OPTIONS: { data: string; label: string }[] = [
@@ -98,7 +104,7 @@ const PARAM_UI: Record<string, { label: string; min: number; max: number; step: 
     min: 25,
     max: 300,
     step: 25,
-    modes: new Set(["breathing", "chase", "rainbow", "spin", "multidot", "ambilight"]),
+    modes: new Set(["breathing", "rainbow", "spin", "multidot", "ambilight", "duotone", "wave", "starlight"]),
     toBackend: (v) => v / 100,
     fromBackend: (v) => Math.round(v * 100),
   },
@@ -107,7 +113,7 @@ const PARAM_UI: Record<string, { label: string; min: number; max: number; step: 
     min: 0,
     max: 50,
     step: 5,
-    modes: new Set(["breathing", "spin", "chase", "multidot", "reactive"]),
+    modes: new Set(["breathing", "spin", "multidot", "reactive", "duotone", "starlight"]),
     toBackend: (v) => v / 100,
     fromBackend: (v) => Math.round(v * 100),
   },
@@ -116,7 +122,7 @@ const PARAM_UI: Record<string, { label: string; min: number; max: number; step: 
     min: 1,
     max: 3,
     step: 1,
-    modes: new Set(["chase", "multidot"]),
+    modes: new Set(["spin", "multidot", "reactive"]),
     toBackend: (v) => v,
     fromBackend: (v) => v,
   },
@@ -356,6 +362,35 @@ export function Lighting({ config, setConfig }: {
       });
     }
   };
+  const makeToggleSetter = (
+    field: "chase" | "compass" | "seesaw",
+    apply: (side: "l" | "r", value: boolean) => Promise<StickLedState>,
+  ) => async (value: boolean) => {
+    if (!stickLed || !sideState) return;
+    const sides = targetSides;
+    const previous = sides.map((s) => stickLed.sides[s][field]);
+    setConfig((current) => {
+      if (!current) return current;
+      let sl = current.stickLed;
+      for (const s of sides) sl = patchSide(sl, s, { [field]: value });
+      return { ...current, stickLed: sl };
+    });
+    try {
+      let applied = stickLed;
+      for (const s of sides) applied = await apply(s, value);
+      setConfig((current) => (current ? { ...current, stickLed: applied } : current));
+    } catch (error) {
+      setConfig((current) => {
+        if (!current) return current;
+        let sl = current.stickLed;
+        sides.forEach((s, i) => { sl = patchSide(sl, s, { [field]: previous[i] }); });
+        return { ...current, stickLed: sl };
+      });
+    }
+  };
+  const setStickLedChase = makeToggleSetter("chase", applyStickLedChase);
+  const setStickLedCompass = makeToggleSetter("compass", applyStickLedCompass);
+  const setStickLedSeesaw = makeToggleSetter("seesaw", applyStickLedSeesaw);
 
   if (!stickLed?.supported || !sideState) {
     return (
@@ -377,6 +412,30 @@ export function Lighting({ config, setConfig }: {
         <SelectEdit label="Stick" value={selectedSide} options={SIDE_OPTIONS} onChange={(value) => setSelectedSide(value as "l" | "r")} />
       )}
       <SelectEdit label="Mode" value={mode} options={MODE_OPTIONS} onChange={setStickLedMode} />
+      {mode === "spin" && (
+        <ToggleRow
+          label="Soft trail"
+          description="Trailing fade (uses Size below) instead of a single hard-edged dot"
+          value={!!sideState.chase}
+          onChange={setStickLedChase}
+        />
+      )}
+      {mode === "reactive" && (
+        <ToggleRow
+          label="Compass"
+          description="Point the lit zone(s) at the stick's push direction instead of lighting evenly"
+          value={!!sideState.compass}
+          onChange={setStickLedCompass}
+        />
+      )}
+      {mode === "duotone" && (
+        <ToggleRow
+          label="Seesaw"
+          description="Breathe the two color groups against each other instead of a static split"
+          value={!!sideState.seesaw}
+          onChange={setStickLedSeesaw}
+        />
+      )}
       {Object.entries(PARAM_UI)
         .filter(([, spec]) => spec.modes.has(mode))
         .map(([param, spec]) => {
@@ -421,7 +480,7 @@ export function Lighting({ config, setConfig }: {
                   onChange={setStickLedChargingIndicator}
                 />
               )}
-              {sideState.colorSource !== "battery" && (
+              {sideState.colorSource !== "battery" && sideState.colorSource !== "random" && (
                 <>
                   {PRESET_COLORS.map((preset) => (
                     <ButtonItem key={preset.value} layout="below" onClick={() => setStickLedColor(preset.value)}>

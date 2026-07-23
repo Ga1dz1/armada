@@ -236,13 +236,13 @@ def action_get_controller_type(request):
 
 
 STICK_SIDES = ("l", "r")
-STICK_LED_MODES = ("static", "breathing", "rainbow", "chase", "spin", "reactive", "multidot", "ambilight", "duotone")
-STICK_LED_COLOR_SOURCES = ("static", "battery")
+STICK_LED_MODES = ("static", "breathing", "rainbow", "spin", "reactive", "multidot", "ambilight", "duotone", "wave", "starlight")
+STICK_LED_COLOR_SOURCES = ("static", "battery", "random", "shimmer")
 DUOTONE_ORIENTATIONS = ("horizontal", "vertical", "diagonal")
 STICK_LED_PARAM_MODES = {
-    "speed": {"breathing", "chase", "spin", "rainbow", "multidot", "ambilight"},
-    "intensity": {"breathing", "chase", "spin", "multidot", "reactive"},
-    "size": {"chase", "multidot"},
+    "speed": {"breathing", "spin", "rainbow", "multidot", "ambilight", "duotone", "wave", "starlight"},
+    "intensity": {"breathing", "spin", "multidot", "reactive", "duotone", "starlight"},
+    "size": {"spin", "multidot", "reactive"},
 }
 STICK_LED_PARAMS = ("speed", "intensity", "size")
 FLASH_BUTTONS = (
@@ -323,6 +323,22 @@ def action_get_stick_led(request):
     return _stick_led_state()
 
 
+def _action_set_stick_led_bool_toggle(cli_command):
+    def handler(request):
+        side = str(request.get("side", ""))
+        if side not in STICK_SIDES:
+            raise ValueError("invalid stick side")
+        enabled = bool(request.get("enabled"))
+        run(["/usr/libexec/armada/stick-led-color", cli_command, side, "on" if enabled else "off"], timeout=5)
+        return _stick_led_state()
+    return handler
+
+
+action_set_stick_led_chase = _action_set_stick_led_bool_toggle("set-chase")
+action_set_stick_led_compass = _action_set_stick_led_bool_toggle("set-compass")
+action_set_stick_led_seesaw = _action_set_stick_led_bool_toggle("set-seesaw")
+
+
 def action_set_stick_led_flash_color(request):
     button = str(request.get("button", ""))
     value = str(request.get("value", ""))
@@ -368,6 +384,9 @@ def _default_stick_side_state():
         "duotoneColorA": "0050FF",
         "duotoneColorB": "FFD700",
         "duotoneOrientation": "horizontal",
+        "chase": False,
+        "compass": False,
+        "seesaw": False,
         "params": {},
     }
 
@@ -408,6 +427,12 @@ def _stick_led_state():
             s["duotoneColorB"] = value
         elif base == "duotone_orientation":
             s["duotoneOrientation"] = value
+        elif base == "chase":
+            s["chase"] = value == "1"
+        elif base == "compass":
+            s["compass"] = value == "1"
+        elif base == "seesaw":
+            s["seesaw"] = value == "1"
         elif "_" in base and base.split("_", 1)[0] in STICK_LED_PARAMS:
             try:
                 s["params"][base] = float(value)
@@ -448,13 +473,20 @@ def action_write_config(request):
         raise ValueError("config payload too large")
     if name == "calibration":
         params = json.loads(text)
-        rsinput = Path("/sys/module/rsinput/parameters")
-        if not rsinput.exists():
+        # Each supported gamepad driver exposes the same calibration
+        # parameter ABI under its own /sys/module/<name>/parameters -
+        # rsinput on AYN devices, retroid (drivers/input/joystick/retroid.c)
+        # on Retroid Pocket. Only one of these will exist on any device.
+        driver_params = next(
+            (p for name in ("rsinput", "retroid") if (p := Path(f"/sys/module/{name}/parameters")).exists()),
+            None,
+        )
+        if driver_params is None:
             raise RuntimeError("controller calibration is not supported on this device")
         for param in CALIBRATION_PARAMS:
             if param in params:
-                (rsinput / param).write_text(str(int(params[param])), encoding="utf-8")
-        (rsinput / "update_params").write_text("1", encoding="utf-8")
+                (driver_params / param).write_text(str(int(params[param])), encoding="utf-8")
+        (driver_params / "update_params").write_text("1", encoding="utf-8")
     atomic_write(CONFIG_PATHS[name], text)
     if name == "power":
         run(["/usr/bin/armada-power", "reload"], timeout=15)
@@ -479,6 +511,9 @@ ACTIONS = {
     "set_stick_led_duotone_orientation": action_set_stick_led_duotone_orientation,
     "set_stick_led_color_source": action_set_stick_led_color_source,
     "set_stick_led_charging_indicator": action_set_stick_led_charging_indicator,
+    "set_stick_led_chase": action_set_stick_led_chase,
+    "set_stick_led_compass": action_set_stick_led_compass,
+    "set_stick_led_seesaw": action_set_stick_led_seesaw,
     "list_displays": action_list_displays,
     "get_display_config": action_get_display_config,
     "set_display_config": action_set_display_config,
