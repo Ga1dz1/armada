@@ -98,15 +98,17 @@ jobs:
           sep-annotations: " "
 
       - name: Log in to ghcr.io
-        # The Containerfile's KERNEL_PKG now pins our own
-        # ghcr.io/<owner>/armada-packages/kernel (private, unlike
-        # virtudude's public base images), so buildah-build needs
-        # credentials to pull it - it never logged in before, since
-        # everything it used to pull was public. buildah-build runs as
-        # this same unprivileged user (no sudo anywhere before this
-        # point in the job), so the login has to be unprivileged too -
-        # a root-only login wouldn't be visible to it.
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+        # The Containerfile pulls our own armada-packages/{kernel,pcsx2,eden} -
+        # kernel is public so GITHUB_TOKEN (or no auth at all) works for it, but
+        # pcsx2/eden are private, unlinked packages: GITHUB_TOKEN only carries
+        # access to *this* repo's own package, not other private packages on the
+        # account, so pulling them needs a real PAT (PACKAGES_READ_TOKEN, scoped
+        # to read:packages only) instead. buildah-build runs as this same
+        # unprivileged user (no sudo anywhere before this point in the job), so
+        # the login has to be unprivileged too - a root-only login wouldn't be
+        # visible to it. The later push step logs in again with GITHUB_TOKEN,
+        # which overwrites this entry before it needs write access.
+        run: echo "${{ secrets.PACKAGES_READ_TOKEN }}" | podman login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
 
       - name: Build Image
         id: build_image
