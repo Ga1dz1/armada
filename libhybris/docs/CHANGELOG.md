@@ -8,6 +8,11 @@ newest first.
 
 ## 2026-07-24
 
+- Fixed the stale Steam Runtime URL in
+  `build_files/generate-steam-bootstrap.sh` (Valve retired the
+  `latest-public-beta` alias; now resolves the newest dated directory
+  from the real index). Verified with a full end-to-end run - the real
+  Steam client self-bootstraps successfully under Xvfb.
 - MangoHud built and installed (armada's 6 patches - Qualcomm GPU
   support, SM8550/SM8750 GPU+battery, RAM/battery naming). Real
   `kgsl`/`msm_dpu`/`msm_drm` symbols confirmed in the compiled output.

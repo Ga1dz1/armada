@@ -8,12 +8,8 @@ right now but aren't done the "real" way yet, not things that are broken.
 
 ## Priority A
 
-### Steam Runtime URL
-
-Tracked primarily in `KNOWN_ISSUES.md` since it's a real bug (breaks a
-script), not just a shortcut - listed here too because fixing it is
-genuinely quick (a two-minute patch, precisely root-caused already) and
-should happen before it's forgotten.
+*(none currently open - the Steam Runtime URL item that lived here was
+fixed 2026-07-24, see `CHANGELOG.md`)*
 
 ⸻
 

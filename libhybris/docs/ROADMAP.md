@@ -16,9 +16,11 @@ Status legend: 🔴 not started · 🟡 in progress · 🟢 mostly done · ✅ d
 
 **Blocking tasks:**
 - Real boot image for RP6 (kernel/DTB/ABL packing against this rootfs - not started)
-- Steam Runtime URL fix (`build_files/generate-steam-bootstrap.sh`, root-caused, not yet patched)
 - Turning `gamescope`/`mesa` from raw `ninja install` into real `pacman`-tracked packages
-- First real hardware boot test (blocked entirely until the above three land - devices are unavailable until there's something to flash)
+- First real hardware boot test (blocked entirely until the above land - devices are unavailable until there's something to flash)
+
+**Resolved:** Steam Runtime URL fix - patched and verified end-to-end
+(`build_files/generate-steam-bootstrap.sh`, see `CHANGELOG.md`).
 
 Not blocking PHASE 1, deliberately deferred: FEX-emu (needed for Proton/Windows games, not for PHASE 1's own exit criteria).
 
@@ -73,14 +75,13 @@ DONE:
 - ☑ InputPlumber (armada's 2 patches, built, installed, device profiles included)
 - ☑ armada-jupiter-hw-support (both patches, installed, no compile needed)
 - ☑ MangoHud (armada's 6 patches, built, installed - real `kgsl`/`msm_dpu` GPU symbols confirmed in compiled output)
-- ☑ Steam bootstrap mechanism (confirmed distro-portable, real Valve ARM64 client downloads/unpacks)
+- ☑ Steam bootstrap mechanism, fully verified end-to-end (confirmed distro-portable, real Valve ARM64 client downloads/unpacks, steam-runtime URL bug fixed and re-verified with a complete successful run including the real Steam self-bootstrap under Xvfb)
 
 Five of six main `armada-packages` gaming-stack components are now real,
 patched, installed builds (`fex` deliberately deferred, see
 `KNOWN_ISSUES.md`).
 
 TODO:
-- ☐ Fix and apply the Steam Runtime URL bug (root-caused, fix documented, not patched)
 - ☐ Real boot image: kernel/DTB/ramdisk packed for RP6's actual ABL boot chain (`post_process/make-bootimg.sh`'s header-v0 conventions), using armada's own already-proven kernel+DTB for this base-OS milestone (not the Halium-target kernel - see `ARCHITECTURE.md` on why those are deliberately decoupled)
 - ☐ Turn `gamescope`/`mesa` raw `ninja install`s into real `pacman` packages (`makepkg`) - see `TECHNICAL_DEBT.md`
 - ☐ First real hardware boot test

@@ -5,23 +5,12 @@ move it to `CHANGELOG.md` with a one-line note, don't just delete it.
 
 ⸻
 
-### Steam Runtime URL is stale (`build_files/generate-steam-bootstrap.sh`)
+### ~~Steam Runtime URL is stale~~ — FIXED
 
-**Found**: 2026-07-24. **Severity**: blocks PHASE 1's Steam bootstrap
-from completing; may also affect armada's own current production builds.
-
-The script's last step downloads `steam-runtime-steamrt-arm64.tar.xz`
-from `repo.steampowered.com/steamrt3c/images/latest-public-beta/` - that
-path doesn't exist anymore (confirmed via the real directory listing:
-only date/build-numbered directories like `3c.0.20260618.246540/` exist
-now, no `latest-public-beta` symlink/alias). The file itself is still
-published fine, just under the real versioned path.
-
-**Fix** (precise, not yet applied): scrape
-`https://repo.steampowered.com/steamrt3c/images/` for the newest
-`3c.0.*` directory (same pattern the script already uses to parse the
-Steam client manifest) instead of hardcoding `latest-public-beta`. A real
-armada production-script fix, deserves its own dedicated reviewed commit.
+**Found**: 2026-07-24. **Fixed**: 2026-07-24, same day. See
+`CHANGELOG.md`. Moved here from "open" only long enough to record it was
+real - full detail is in the changelog and the commit itself
+(`build_files/generate-steam-bootstrap.sh`).
 
 ⸻
 
