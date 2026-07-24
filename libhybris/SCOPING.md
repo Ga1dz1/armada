@@ -174,3 +174,48 @@ one of these two trees via its proper `repo`-manifest + Kleaf/Bazel flow
 devicetree, and LineageOS's own build instructions/wiki page to follow
 exactly rather than reverse-engineering). Only after that baseline build
 works is it meaningful to start layering in hybris-boot/libhybris changes.
+
+## Update, same day (continued): found the *current* kernel repos, and a real new blocker
+
+`android_kernel_ayn_qcs8550` (cloned earlier, Linux 5.15.208) turned out to
+be a **stale/legacy** repo - the actual current one referenced by
+`android_kernel_ayn_qcs8550-build-ack`'s `BUILD.bazel` is a different,
+newer family: `android_kernel_ayn_kernel-ack` (**Linux 6.18.20**, pushed
+2026-06-29 - genuinely current), `android_kernel_ayn_modules-ack`,
+`android_kernel_ayn_qcs8550-devicetrees-ack`. Confirmed via the Bazel
+`kernel_build()` target names and `target_path` entries in the build-ack
+repo's own `lineage.dependencies`/BUILD.bazel. Don't build against the
+`-qcs8550` (no `-ack` suffix, no `-kernel-`/`-modules-` split) repo already
+on disk - it's superseded.
+
+**Real new blocker found**: LineageOS's own manifest
+(`LineageOS/android`, `lineage-23.2`, both `default.xml` and
+`snippets/lineage.xml`) pins kernel-build Clang **only** as
+`prebuilts/clang/kernel/linux-x86/clang-r416183b` and
+`prebuilts/clang/host/linux-x86` - **no linux-arm64/aarch64 host toolchain
+variant exists in the standard manifest**. This build host is native
+aarch64 (confirmed via `uname -m` and `repo`'s own version banner - not
+running under emulation, which is genuinely good news for everything
+*else*), but has **no x86_64 emulation installed** (`qemu-x86_64-static`
+absent, no `binfmt_misc` entry) - so the standard, well-tested kernel
+build toolchain literally cannot execute on this machine as-is.
+
+The GKI "mixed build" base kernel prebuilts
+(`kernel/prebuilts/<version>/arm64`, confirmed present in the manifest
+alongside x86_64 ones) are fine - those are *target*-arch binaries, not a
+host-arch problem. It's specifically the **compiler toolchain used to
+build the vendor modules** that's x86_64-only in the standard manifest.
+
+Three real options, not yet chosen (needs a decision, not more research):
+1. Install x86_64 userspace emulation (`qemu-user-static`/binfmt) on this
+   host and accept slower (emulated) module compilation - straightforward,
+   no architecture workarounds, just slower.
+2. Try substituting a native aarch64 host Clang/GCC for the pinned
+   x86_64 prebuilt - Kleaf/Bazel builds are often strict about exact
+   toolchain version pins for reproducibility, so this may not "just work"
+   without its own real debugging.
+3. Do this specific build phase on a different, x86_64 host if one becomes
+   available, and only bring the resulting artifacts back here.
+
+Not decided yet - flagged to the user rather than picked unilaterally,
+since it's a host/environment setup choice, not a code decision.
