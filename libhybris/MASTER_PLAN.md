@@ -794,7 +794,38 @@ what Arch's own package builds from) and dry-ran all 3
 addition, the ir3 bindless-UBO-const-lowering disable), only minor line
 offsets from the 26.1.4→26.1.5 version drift, no rejects. Confirms the
 patches are genuinely portable and this is a real, achievable next
-build - **not attempted as a full build this session** (mesa is a much
-larger, slower build than gamescope, and this was already a very long
-session - a real compile deserves its own dedicated run rather than
-being rushed at the tail end of this one).
+build.
+
+**Update, continued same session: actually built it, completely.**
+Fetched the real Arch Linux mesa `PKGBUILD`
+(`gitlab.archlinux.org/archlinux/packaging/packages/mesa`) as the
+authoritative dependency/build-flag reference rather than guessing -
+its default build compiles every gallium/Vulkan driver for every GPU
+vendor (AMD/Intel/Nouveau/etc.), which would take hours and is almost
+entirely irrelevant to Adreno/RP6. Trimmed the `arch-meson` invocation
+down to just `gallium-drivers=freedreno,llvmpipe` and
+`vulkan-drivers=freedreno,swrast` and iterated through the real
+config-time errors that came from stripping so many drivers out
+(`gallium-va`/`gallium-mediafoundation`/`android-libbacktrace` are
+auto-enabled by default but require drivers/platforms we're not
+building; `libunwind` needed explicit disabling too, matching what
+Arch's own PKGBUILD already does for the same reason) - each fixed by
+checking the real error against `meson.options`, not guessed blind.
+
+**`ninja -C build` completed 1664/1664 targets**, including the real
+Turnip driver (`src/freedreno/vulkan/libvulkan_freedreno.so`, 15MB, real
+aarch64 ELF) and the DRI/EGL/GBM stack. Verified armada's A830 chip-ID
+patch (`0002-add-a830-chip-id.patch`) genuinely took effect - not just
+"patch applied to source," checked the actual **generated**
+`freedreno_devices.h` header this build produced and found all three new
+chip-ID entries the patch adds
+(`0xffff44050001`/`0x44050000`/`0x44050001`, all "Adreno (TM) 830")
+present verbatim. Same category of result as gamescope: compiling
+correctly and carrying the right patches through to the real build
+output is now confirmed; whether it *runs* correctly on real Adreno
+silicon still needs actual RP6 hardware.
+
+Both `gamescope` and `mesa`/Turnip - the two pieces flagged as
+PHASE 1/3-blocking placeholders earlier in this log - are now real,
+verified, patched builds sitting on disk (`libhybris/src/atlas-base/rootfs/build/`,
+gitignored), not gaps anymore.
