@@ -271,6 +271,71 @@ Recommending this gets a real conversation with the user before more
 autonomous digging - "which donor device for Mini V2's vendor blobs" and
 "do we lean into RP6-via-LineageOS-prebuilts instead of Mini V2 first" are
 project-direction calls, not something to guess at overnight.
+
+## 2026-07-24: RP6 LineageOS prebuilt boot images — pulled, unpacked, real milestone
+
+Acted on the recommendation above. `download.lineageos.org` has a public
+API (`https://download.lineageos.org/api/v2/devices/RP6/builds`) listing
+individual downloadable artifacts per nightly, not just the flashable zip.
+Latest at the time: 2026-07-18. Pulled `boot.img`, `vendor_boot.img`,
+`dtbo.img`, `init_boot.img` directly (sha256 verified against the API's own
+hashes), ~320MB total combined - nowhere near the earlier disk-fill
+incident's scale.
+
+Unpacked with `unpack_bootimg.py` pulled straight from
+`system/tools/mkbootimg` (a single lightweight standalone Python script via
+googlesource's `?format=TEXT` gitiles endpoint, base64-decoded - no build
+tree, no Bazel, no `repo` needed at all):
+
+- **`boot.img`** (header v4): kernel only, **ramdisk size 0**. This is
+  Android's modern split-boot layout - `boot.img` on Android 13+/GKI
+  devices carries just the kernel, the generic ramdisk moved to a separate
+  `init_boot.img`.
+- Extracted kernel (`out-boot/kernel`, 51MB) is a valid, real ARM64 boot
+  Image. `strings` shows `Linux version 5.15.208-g94a246947232`, built
+  2026-07-18 with Android's own Clang/LLVM 21 toolchain (matches
+  `kernel/ayn/qcs8550`'s tree, same version we found there - this genuinely
+  is that kernel, already built).
+- **`vendor_boot.img`** (header v4): device-specific DTB (473KB, single
+  flat blob, decompiles cleanly with `dtc` - real qcs8550/kalama tree
+  visible: `remoteproc-adsp`, `remoteproc-spss`, `dsi_pll_codes`, etc.) +
+  an LZ4-compressed vendor ramdisk (9.9MB compressed, 29.6MB decompressed
+  cpio). Needed the actual `lz4` CLI (only `liblz4` was preinstalled) and
+  `--legacy`-less `lz4 -d` worked fine once the binary existed.
+- Vendor ramdisk contains **241 real, prebuilt `.ko` kernel modules** under
+  `lib/modules/` - `modinfo` on one (`moorechip-joystick.ko`, "Driver for
+  Moorechip controller over UART", by Balázs Triszka) shows `vermagic:
+  5.15.208-g94a246947232 SMP preempt mod_unload modversions aarch64` -
+  **exact match** to the kernel's own version string, i.e. this is a real,
+  ABI-consistent, already-tested kernel+modules set, not something
+  reconstructed or guessed at.
+- **`init_boot.img`**: the real generic-ramdisk half of the split (kernel
+  size 0, ramdisk 2.8MB compressed / 5.2MB decompressed) - standard modern
+  Android generic ramdisk layout (`init`, `first_stage_ramdisk`,
+  `second_stage_resources`, etc.), useful later as a reference for how
+  hybris-boot's own custom init needs to hook in, not touched further yet.
+
+**This delivers exactly what the paused Bazel/Kleaf path was trying to
+produce, without any of its risk.** No `msm-kernel` sibling repo, no
+bzlmod dependency graph, no JVM/qemu fighting - just four small file
+downloads and a standard unpack script. Confirms the recommendation from
+the previous section was right.
+
+All of this is saved at `libhybris/src/rp6-lineageos-prebuilt/` (gitignored,
+~341MB): the four `.img` files, `unpack_bootimg.py`, the unpacked
+`out-boot/` / `out-vendor_boot/` / `out-init_boot/` directories, and the
+extracted `vendor_ramdisk_extracted/` (241 `.ko` files under `lib/modules/`)
+and `init_ramdisk_extracted/` trees.
+
+**Next step from here**: this is now genuinely at the same stage Mini V2
+reached (a real, verified, buildable/bootable kernel in hand) - the actual
+hybris-boot ramdisk-assembly work can start on RP6 using these artifacts
+instead of Mini V2's. Still open, still needs a real decision, not a guess:
+whether to pursue RP6 or Mini V2 first as the initial hybris-boot target -
+RP6 now has a head start (real vendor modules + DTB in hand, zero build
+risk) but Mini V2 has no Android layer at all to borrow HAL blobs from
+(the donor-device question), so RP6 may honestly be the more tractable
+first target end-to-end. Flagging this shift rather than deciding it.
     (`android_kernel_ayn_qcs8550-modules`: audio-kernel, camera-kernel,
     securemsm-kernel, eva-kernel, graphics-kernel, bt-kernel) rather than a
     monolithic vendor kernel - a notably Halium/libhybris-friendly shape,
