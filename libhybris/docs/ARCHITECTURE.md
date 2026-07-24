@@ -248,9 +248,17 @@ geometry (`--base 0x10000000 --pagesize 2048 ... --header_version 0`,
 from `system_files/usr/lib/armada/bootimg-args`) into a single `/KERNEL`
 staged on the FAT boot partition.
 
-For PHASE 1's first real boot test, the plan is to reuse **armada's own
-already-proven kernel + DTB** for RP6 (not the Halium-target LineageOS
-kernel) with the new Arch Linux ARM rootfs/initramfs - deliberately
-decoupling "new base OS" from "new kernel" so a failure doesn't
-compound two unproven things at once (matches `MASTER_PLAN.md`'s own
-"Hardware → Stability" priority ordering). Not yet attempted.
+**Superseded (ADR-007)**: the plan was originally to reuse armada's own
+kernel+DTB for the first boot test, decoupling "new base OS" risk from
+"new kernel" risk. Corrected same day: armada's kernel doesn't have (and
+was never going to gain) the vendor/HAL support PHASE 4 actually needs
+(camera, full sensors incl. gyroscope, vendor GPU blobs) - it's a
+different kernel line by armada's own deliberate design choice. Using it
+first would've been a real milestone that doesn't build toward PHASE 4's
+actual target, paying for the kernel integration twice instead of once.
+
+**Current plan**: use the real Halium-target kernel already pulled and
+verified in PHASE 4's work (`libhybris/src/rp6-lineageos-prebuilt/` -
+Linux 5.15.208, real DTB, 241 vendor `.ko` modules, all vermagic-matched)
+with the new Arch Linux ARM rootfs/initramfs for RP6's first real boot
+test. Not yet attempted - in progress.

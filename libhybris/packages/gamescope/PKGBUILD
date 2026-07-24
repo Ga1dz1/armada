@@ -1,20 +1,22 @@
 # Maintainer: CR(g) OS / Atlas OS project
 #
-# armada's own patched gamescope, ported from armada-packages/gamescope's
-# Fedora RPM spec to a real Arch PKGBUILD. Verified 2026-07-24: this exact
-# recipe (source, pinned commits, patches, meson flags) builds cleanly on
-# Arch Linux ARM aarch64 via a manual meson/ninja run - see
-# libhybris/docs/ARCHITECTURE.md and libhybris/logs/2026-07-24.md for the
-# full verification trail. This PKGBUILD exists to turn that verified
-# manual build into a real, pacman-tracked package (see
-# libhybris/docs/TECHNICAL_DEBT.md, Priority B) - not yet run through
-# makepkg end-to-end, see the note at the bottom.
+# Patched gamescope for RP6/Adreno hardware - the patch set's origin is
+# a separate upstream patch/build repo (real provenance:
+# libhybris/src/armada-packages/gamescope/PATCHES.md, kept as internal
+# developer reference only - no "armada" branding in package
+# name/metadata, per explicit project direction). Ported that repo's
+# Fedora RPM spec to a real Arch PKGBUILD. Verified 2026-07-24: this
+# exact recipe (source, pinned commits, patches, meson flags) builds
+# cleanly on Arch Linux ARM aarch64, and installs as a real
+# `makepkg`-built, `pacman`-tracked package - see
+# libhybris/docs/ARCHITECTURE.md and libhybris/logs/2026-07-24.md for
+# the full verification trail.
 
-pkgname=gamescope-armada
+pkgname=gamescope
 _pkgname=gamescope
 pkgver=3.16.24
 pkgrel=1
-pkgdesc="SteamOS session compositing window manager, with armada's RP6/ROCKNIX patches (rotation shader, DRM fake-output-mm, gamepad cursor fix)"
+pkgdesc="SteamOS session compositing window manager, with RP6/ROCKNIX patches (rotation shader, DRM fake-output-mm, gamepad cursor fix)"
 arch=(aarch64)
 url="https://github.com/ValveSoftware/gamescope"
 license=(BSD-2-Clause BSD-3-Clause LicenseRef-Reshade)
@@ -30,8 +32,6 @@ makedepends=(
   benchmark cmake git glslang meson ninja vulkan-headers wayland-protocols
   catch2 glm stb spirv-headers openvr
 )
-provides=(gamescope)
-conflicts=(gamescope)
 
 _reshade_commit=696b14cd6006ae9ca174e6164450619ace043283
 _vkroots_commit=5106d8a0df95de66cc58dc1ea37e69c99afc9540

@@ -15,7 +15,9 @@ Status legend: 🔴 not started · 🟡 in progress · 🟢 mostly done · ✅ d
 **Current milestone:** `Power On → Steam` (PHASE 1 exit criteria)
 
 **Blocking tasks:**
-- Real boot image for RP6 (kernel/DTB/ABL packing against this rootfs - not started) - **only remaining blocker**
+- Real boot image for RP6 (kernel/DTB/ABL packing against this rootfs,
+  using the **real Halium-target kernel** from PHASE 4's work, not
+  armada's own kernel - see ADR-007) - **only remaining blocker**
 - First real hardware boot test (blocked until the above lands - devices are unavailable until there's something to flash)
 
 **Resolved:** both `gamescope` and `mesa` are now real, `makepkg`-built,

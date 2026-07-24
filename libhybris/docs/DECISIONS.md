@@ -139,6 +139,53 @@ its own track and gets integrated later, once PHASE 1 itself is proven.
 which would be architecturally "further along" toward the eventual goal
 but riskier for the very first hardware test.
 
+**Superseded 2026-07-24, same day - see ADR-007.** The premise here
+(armada's kernel is "already proven," so it's the lower-risk choice) is
+true but beside the point: armada's kernel is proven *for what armada
+itself uses* (WiFi, open-source Turnip/freedreno GPU, controller) - it
+was never going to gain camera/full-sensor/vendor-HAL support no matter
+how the base-OS boot test went, because that support doesn't exist in
+that kernel at all. Booting Arch on armada's kernel first would have
+been a real, working milestone that led nowhere for PHASE 4's actual
+goal - the Halium-target kernel was always the one that had to be used
+eventually, so decoupling the risk here just meant paying for the same
+integration twice. Do not resume this approach without a new decision
+overriding ADR-007.
+
+⸻
+
+### ADR-007: use the real Halium-target (LineageOS) kernel for the first RP6 boot test, not armada's own kernel
+
+**Date**: 2026-07-24
+
+**Decision**: PHASE 1's first real hardware boot test for RP6 uses the
+real kernel + DTB + vendor `.ko` modules already pulled from an official
+LineageOS build in PHASE 4's work
+(`libhybris/src/rp6-lineageos-prebuilt/`, Linux 5.15.208), not armada's
+own kernel. Supersedes ADR-005.
+
+**Why**: caught directly by the user - "armada's kernel is missing a lot
+of what's in the Android kernel, won't we carry armada's own gaps into
+the new system?", sharpened with a concrete example (gyroscope: the
+whole reason for doing Halium at all was to get the *full* Android
+hardware-capability set - sensors, camera, full HAL - back per ADR-006's
+"from Android" list). armada's own kernel was never going to have that
+support, no matter how well the base-OS boot test went - it's simply a
+different kernel line (open-source mainline drivers only, by armada's
+own deliberate choice) that doesn't carry vendor blobs at all. Using it
+first would have produced a real, working milestone that doesn't build
+toward PHASE 4's actual target - the Halium kernel swap would still have
+been needed later, meaning the integration work gets paid for twice
+instead of once.
+
+**Rejected alternative**: ADR-005's original reasoning (decouple "new
+base OS" risk from "new kernel" risk by using the already-proven armada
+kernel first). Sound risk-reduction logic in isolation, but wrong here
+because "already proven" doesn't mean "sufficient for where this project
+is actually headed" - the kernel choice for PHASE 1's first boot test
+should be the one PHASE 4 actually needs, not the one that's lowest-risk
+in a vacuum.
+
 ⸻
 
 ### ADR-006: Android is a thin bridge to proprietary hardware, not a second userspace

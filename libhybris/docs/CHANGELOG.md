@@ -8,6 +8,16 @@ newest first.
 
 ## 2026-07-24
 
+- Removed all "armada" branding from new package names/metadata per
+  explicit project direction (`gamescope-armada`/`mesa-armada` renamed to
+  `gamescope`/`mesa`). Real provenance kept as internal developer
+  comments only.
+- **ADR-005 superseded by ADR-007**: the first RP6 boot test uses the
+  real Halium-target (LineageOS) kernel, not armada's own kernel - caught
+  directly by the user (armada's kernel never had the vendor/HAL support
+  PHASE 4 actually needs - camera, full sensors including gyroscope,
+  GPU vendor blobs - using it first would've been a real milestone that
+  doesn't build toward the actual target).
 - `mesa` turned into a real, tested `pacman` package
   (`libhybris/packages/mesa/PKGBUILD`) - built clean on the first
   `makepkg` try, installed via `pacman -U` after clearing stale files
