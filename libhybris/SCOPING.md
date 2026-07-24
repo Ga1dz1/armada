@@ -401,9 +401,33 @@ consequences (image size, OTA update story, A/B considerations), not
 something to guess at without the user.
 
 **Recommended next steps, in order, next time this is picked up:**
-1. Decide the storage layout question above.
-2. Check whether `lxc-android`/`mechanicd` could map onto podman instead of
-   LXC, given armada's own container tooling is already podman-based.
+1. ~~Decide the storage layout question above.~~ **Decided 2026-07-24**:
+   file/subvolume on the existing btrfs root - not touching the SD image's
+   partition table. Keeps this MVP-scoped; halium-system and Android's
+   system.img live as ordinary files/subvolumes inside armada's own root,
+   same disk, no repartitioning, no `finalize-armada-image.sh` changes.
+   Tradeoff accepted knowingly: shares space/I/O with the rest of armada
+   rather than being isolated - fine for a first working prototype.
+2. ~~Check whether `lxc-android`/`mechanicd` could map onto podman instead
+   of LXC.~~ **Checked 2026-07-24**: read `lxc-android`'s actual container
+   config (`var/lib/lxc/android/config`) and `pre-start.sh`. It's a
+   genuinely minimal container - `lxc.network.type = none` (no separate
+   network namespace, shares the host's), a handful of bind mounts from
+   the host's Android fstab into the container rootfs, and
+   `lxc.init_cmd = /init` - it just runs Android's own `/init` as the
+   container's PID 1, sharing the kernel. No OCI image involved anywhere.
+   **This is a worse fit for podman than expected, and a better fit for
+   `systemd-nspawn` than for either.** Podman's whole model centers on OCI
+   images and (by default) a separate network namespace - neither applies
+   here, there's no image to pull/build, just an existing directory tree
+   to boot another init system inside of. `systemd-nspawn` is *built for
+   exactly this* ("boot a second init tree, share the host kernel") and
+   costs armada zero new dependencies, since it's already part of systemd.
+   Recommending `systemd-nspawn` over both LXC (extra dependency, and this
+   session already has a `feedback_verify_thirdparty_claims`-style
+   discipline to actually check tools before adopting them) and podman
+   (wrong abstraction for this specific job) - not yet implemented,
+   flagging as the working assumption for whenever this is picked up.
 3. Only then actually attempt building/adapting an initramfs + assembling
    a boot.img (`halium-boot`'s manual-repack recipe, or `mkbootimg.py` from
    the same `system/tools/mkbootimg` repo `unpack_bootimg.py` came from)
