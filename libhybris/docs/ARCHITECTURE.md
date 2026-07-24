@@ -186,14 +186,17 @@ MVP-scoped, no `finalize-armada-image.sh`/partition-table changes
 needed). See "Storage architecture" below for the deeper Btrfs-vs-Android
 constraint this interacts with.
 
-**Resolved 2026-07-24**: the donor-device question for Mini V2 (and
-Flip2, RP5) is no longer open. The user has official stock firmware
-dumps for Mini, Mini V2, Flip2, and RP5 too (same QFIL/EDL format as the
-RP6 one just processed - see `logs/2026-07-24.md`) - these are each
-device's own real, OEM-shipped kernel + vendor blobs, not a borrowed
-donor device's. No donor-device compromise needed for the SM8250 family
-at all. Not yet received/processed in this session - flagging that this
-gap is closed as soon as they're provided, not guessing at contents yet.
+**Resolved 2026-07-24, confirmed with real data**: the donor-device
+question for Mini V2 is closed for real. Received and unpacked Mini V2's
+own official stock firmware (`libhybris/src/miniv2-stock-firmware/`,
+gitignored) - real kernel (Linux 4.19.157-perf, built on a genuine
+Retroid-owned host `RPMiniV2@RPServer`), `CONFIG_ASHMEM`/binder already
+enabled, and confirmed the real Adreno 650 GPU blobs plus the real
+Sensors HAL (`sensors.ssc.so`) present in the stock `vendor.img`. No
+donor device needed - Mini V2 has its own genuine, complete vendor blob
+set. Flip2/RP5 firmware confirmed available too, to be provided once a
+first alpha exists (user's explicit prioritization) - not chased this
+session.
 
 **RP6 stock firmware already received and partially processed**
 (`libhybris/src/rp6-stock-firmware/`, gitignored) - genuinely richer than

@@ -8,6 +8,13 @@ newest first.
 
 ## 2026-07-24
 
+- Mini V2's own official stock firmware received and unpacked (Linux
+  4.19.157-perf, built on a genuine Retroid host `RPMiniV2@RPServer`) -
+  confirmed real Adreno 650 GPU blobs and Sensors HAL (`sensors.ssc.so`)
+  in the stock `vendor.img`. Donor-device question closed for real, not
+  just in principle - Mini V2 has its own genuine complete vendor blob
+  set. Flip2/RP5 firmware confirmed available, deferred until a first
+  alpha exists.
 - **Retroid has officially authorized this project.** Received a
   complete official RP6 stock firmware dump (QFIL/EDL format) -
   genuinely richer than the LineageOS build used so far (`CONFIG_ASHMEM=y`
