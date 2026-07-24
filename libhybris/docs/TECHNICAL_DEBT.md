@@ -15,26 +15,36 @@ fixed 2026-07-24, see `CHANGELOG.md`)*
 
 ## Priority B
 
-### `gamescope`/`mesa` are raw `ninja install`, not real `pacman` packages
+### ~~`gamescope` is raw `ninja install`~~ — FIXED
+
+**Fixed 2026-07-24.** `libhybris/packages/gamescope/PKGBUILD` is a real,
+tested `PKGBUILD` - built with `makepkg` (not just written and assumed to
+work), installed via `pacman -U`, `pacman -Q gamescope-armada` confirms
+it's tracked. Two real bugs found and fixed while getting this right:
+(1) `prepare()` originally applied every patch twice (a leftover loop-plus-
+explicit-list duplication); (2) `arch-meson`'s `--wrap-mode=nodownload`
+blocks meson's wrap-based auto-fetch for the `wlroots`/`libliftoff`
+subprojects (this didn't affect the earlier manual `ninja install`, which
+used plain `meson setup` without that flag) - fixed by vendoring both as
+real pinned-commit tarballs (from GitHub's tree API for the exact tag, not
+guessed) alongside `reshade`/`vkroots`, same pattern. The stale
+`/usr/local/bin` leftovers from the earlier raw `ninja install` were
+shadowing the new package via PATH order - removed.
+
+### `mesa` is still raw `ninja install`, not a real `pacman` package
 
 Built and installed directly via `ninja -C build install` inside the
-chroot - works, and both patch sets are verified present in the compiled
-output (`ARCHITECTURE.md`/`logs/2026-07-24.md` have the verification
-detail). But `pacman -Q` doesn't know these files exist, which means:
+chroot - works, and the patch set is verified present in the compiled
+output (`ARCHITECTURE.md`/`logs/2026-07-24.md` have the detail). But
+`pacman -Q` doesn't know these files exist, which means a future
+`pacman -Syu` would silently overwrite `mesa`'s install with the stock
+unpatched Arch package again. No dependency tracking, no easy
+uninstall/reinstall, no way to pin a version.
 
-- A future `pacman -Syu` would silently overwrite `mesa`'s install with
-  the stock unpatched Arch package again (gamescope wouldn't collide the
-  same way since its `ninja install` prefix defaults to `/usr/local`,
-  outside `pacman`'s `/usr` ownership - but that's its own kind of
-  fragile, not a fix).
-- No `.pkg.tar.zst` artifact exists to actually ship/distribute.
-- No dependency tracking, no easy uninstall/reinstall, no way to pin a
-  version.
-
-**Fix**: write real `PKGBUILD`s for both (the meson flags, patch list,
-and version pins are all already known and verified working - this is
-translation work, not re-investigation), build with `makepkg`, install
-via `pacman -U`.
+**Fix**: write a real `PKGBUILD` (same approach just proven for
+`gamescope` - `libhybris/packages/gamescope/PKGBUILD` is now the
+reference pattern to follow), build with `makepkg`, install via
+`pacman -U`.
 
 ⸻
 

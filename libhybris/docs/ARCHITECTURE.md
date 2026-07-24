@@ -143,7 +143,13 @@ patched, and installed into this rootfs: `gamescope`, `mesa`(/Turnip),
 deferred (see `DECISIONS.md` - not required for PHASE 1's own exit
 criteria, and a meaningfully bigger build than the others).
 
-**Known gap**: these are raw `ninja install`/`make install`, not real
+**`gamescope` is now a real, tested `pacman` package**
+(`libhybris/packages/gamescope/PKGBUILD` - built with `makepkg`, installed
+via `pacman -U`, verified tracked). Use this as the reference pattern for
+turning the rest into real packages.
+
+**Known gap, `mesa`/`inputplumber`/`jupiter-hw-support`/`mangohud`
+still**: these remain raw `ninja install`/`make install`, not real
 `pacman`-tracked packages. See `TECHNICAL_DEBT.md`.
 
 ⸻

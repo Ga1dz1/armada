@@ -1,0 +1,144 @@
+# Maintainer: CR(g) OS / Atlas OS project
+#
+# armada's own patched gamescope, ported from armada-packages/gamescope's
+# Fedora RPM spec to a real Arch PKGBUILD. Verified 2026-07-24: this exact
+# recipe (source, pinned commits, patches, meson flags) builds cleanly on
+# Arch Linux ARM aarch64 via a manual meson/ninja run - see
+# libhybris/docs/ARCHITECTURE.md and libhybris/logs/2026-07-24.md for the
+# full verification trail. This PKGBUILD exists to turn that verified
+# manual build into a real, pacman-tracked package (see
+# libhybris/docs/TECHNICAL_DEBT.md, Priority B) - not yet run through
+# makepkg end-to-end, see the note at the bottom.
+
+pkgname=gamescope-armada
+_pkgname=gamescope
+pkgver=3.16.24
+pkgrel=1
+pkgdesc="SteamOS session compositing window manager, with armada's RP6/ROCKNIX patches (rotation shader, DRM fake-output-mm, gamepad cursor fix)"
+arch=(aarch64)
+url="https://github.com/ValveSoftware/gamescope"
+license=(BSD-2-Clause BSD-3-Clause LicenseRef-Reshade)
+depends=(
+  glibc libstdc++ libgcc lcms2 libavif 'libcap.so' libdecor libdrm libei
+  libinput 'libpipewire-0.3.so' libx11 libxcb libxcomposite libxcursor
+  libxdamage libxext libxfixes libxi 'libxkbcommon.so' libxmu libxrender
+  libxres libxtst libxxf86vm luajit pixman sdl2 seatd systemd-libs
+  vulkan-icd-loader wayland xcb-util-errors xcb-util-wm xorg-server-xwayland
+  wlroots0.18 libliftoff hwdata libdisplay-info
+)
+makedepends=(
+  benchmark cmake git glslang meson ninja vulkan-headers wayland-protocols
+  catch2 glm stb spirv-headers openvr
+)
+provides=(gamescope)
+conflicts=(gamescope)
+
+_reshade_commit=696b14cd6006ae9ca174e6164450619ace043283
+_vkroots_commit=5106d8a0df95de66cc58dc1ea37e69c99afc9540
+# Pinned submodule commits for this exact gamescope tag (from GitHub's
+# tree API for tag 3.16.24, not guessed) - vendored as real tarballs
+# instead of relying on meson's wrap auto-fetch, which arch-meson's
+# --wrap-mode=nodownload disables (found the hard way, see
+# logs/2026-07-24.md).
+_wlroots_commit=c08d99437ec8bb56a703f04ad1ef199502c62d10
+_libliftoff_commit=8b08dc1c14fd019cc90ddabe34ad16596b0691f4
+
+source=(
+  "${_pkgname}-${pkgver}.tar.gz::https://github.com/ValveSoftware/gamescope/archive/refs/tags/${pkgver}.tar.gz"
+  "reshade-${_reshade_commit:0:7}.tar.gz::https://github.com/misyltoad/reshade/archive/${_reshade_commit}/reshade-${_reshade_commit:0:7}.tar.gz"
+  "vkroots-${_vkroots_commit:0:7}.tar.gz::https://github.com/misyltoad/vkroots/archive/${_vkroots_commit}/vkroots-${_vkroots_commit:0:7}.tar.gz"
+  "wlroots-${_wlroots_commit:0:7}.tar.gz::https://github.com/Joshua-Ashton/wlroots/archive/${_wlroots_commit}/wlroots-${_wlroots_commit:0:7}.tar.gz"
+  "libliftoff-${_libliftoff_commit:0:7}.tar.gz::https://gitlab.freedesktop.org/emersion/libliftoff/-/archive/${_libliftoff_commit}/libliftoff-${_libliftoff_commit}.tar.gz"
+  "stb_image_resize.h::https://raw.githubusercontent.com/nothings/stb/master/deprecated/stb_image_resize.h"
+  stb.pc
+  0001-cstdint.patch
+  Use-system-stb-glm.patch
+  0004-DRMBackend-Add-GAMESCOPE_FAKE_OUTPUT_MM-env-to-set-c.patch
+  0005-feature-add-rotation-shader-for-rotating-output.patch
+  0006-steamcompmgr-fix-gamepad-cursor-sprite-frozen-via-XTest.patch
+  Allow-to-use-system-wlroots.patch
+)
+# Real checksums, regenerated 2026-07-24 via `makepkg -g` after adding
+# the vendored wlroots/libliftoff tarballs.
+sha256sums=('ba2afc669c541c6e134578ef97d45354b721aed5ecb69c7180d6178e57514186'
+            '3aa6feda7773cc8ffa8fb012fe95e6207c776101e29198d0e0d34a0c5e339f6a'
+            '37b77586e91f7ebee70380dcddd73bf01ae4acef1053e6be41d0485ede022422'
+            'd1e5bc9a14be16150256a13d443d87cad4ec7dc7619469201cfe6e81a76f7836'
+            '8de28aee6f90f47b7fc7037dcd2360166197c0b5d2033f3afdbd34f2ea1bf216'
+            '6a0e75adbabb48df9031c2e39ccd97437bb226fe31e7d4a01c7bf70a18d32ec6'
+            'f6b390890975150b8df34655a85d86a8ccf9d2c6d067e72778e038b4255d57dd'
+            '05637e3bf96bbc80545c641a22e0f2a62cfedf732b3f136c162944688b2cc1f7'
+            '42f1167fbf8b73283393bb025b2fd453e9ec6ef015579e49cf8ef5f5e7010485'
+            'c87cae3515046fd54a118ec861c29e4f309da25a7247d3fd494e403b551b7ef8'
+            '299ae193e8bc40bcebfa4fe61a1b0c19122a408ab7c630cc9e386907f1a16024'
+            '73e31c5bc3be646d9a32ca8ba7c8ce3d3a9d4b4a8211872364806c869f9eb7dd'
+            'e8a6ed949d748fd3994fe9c9e54edd95a803f16b7f8d613ece949b64be69ef6c')
+
+prepare() {
+  cd "${_pkgname}-${pkgver}"
+
+  mkdir -p pkgconfig
+  cp "${srcdir}/stb.pc" pkgconfig/stb.pc
+
+  # System spirv-headers instead of the vendored thirdparty/ copy.
+  sed -i 's^../thirdparty/SPIRV-Headers/include/spirv/^/usr/include/spirv/^' src/meson.build
+
+  mkdir -p src/reshade subprojects/vkroots subprojects/wlroots subprojects/libliftoff
+  tar -xzf "${srcdir}/reshade-${_reshade_commit:0:7}.tar.gz" --strip-components=1 -C src/reshade
+  tar -xzf "${srcdir}/vkroots-${_vkroots_commit:0:7}.tar.gz" --strip-components=1 -C subprojects/vkroots
+  tar -xzf "${srcdir}/wlroots-${_wlroots_commit:0:7}.tar.gz" --strip-components=1 -C subprojects/wlroots
+  tar -xzf "${srcdir}/libliftoff-${_libliftoff_commit:0:7}.tar.gz" --strip-components=1 -C subprojects/libliftoff
+
+  for p in 0001-cstdint.patch Use-system-stb-glm.patch \
+           0004-DRMBackend-Add-GAMESCOPE_FAKE_OUTPUT_MM-env-to-set-c.patch \
+           0005-feature-add-rotation-shader-for-rotating-output.patch \
+           0006-steamcompmgr-fix-gamepad-cursor-sprite-frozen-via-XTest.patch \
+           Allow-to-use-system-wlroots.patch; do
+    patch -p1 < "${srcdir}/${p}"
+  done
+}
+
+build() {
+  cd "${_pkgname}-${pkgver}"
+
+  # Real fix, found 2026-07-24: Arch's stb package only ships
+  # stb_image_resize2.h (upstream renamed/rewrote it); this gamescope
+  # version's source still wants the old stb_image_resize.h. Drop the
+  # exact same file from stb's own upstream repo alongside the real
+  # system headers for this build only (not installed system-wide).
+  install -Dm644 "${srcdir}/stb_image_resize.h" "${srcdir}/stb-compat/stb_image_resize.h"
+
+  export PKG_CONFIG_PATH="${srcdir}/${_pkgname}-${pkgver}/pkgconfig"
+  export CPPFLAGS="${CPPFLAGS:-} -I${srcdir}/stb-compat"
+
+  arch-meson . build \
+    -Davif_screenshots=enabled \
+    -Dbenchmark=enabled \
+    -Ddrm_backend=enabled \
+    -Denable_gamescope=true \
+    -Denable_gamescope_wsi_layer=true \
+    -Denable_openvr_support=true \
+    -Dforce_fallback_for=wlroots,libliftoff,vkroots \
+    -Dinput_emulation=enabled \
+    -Dpipewire=enabled \
+    -Drt_cap=enabled \
+    -Dsdl2_backend=enabled
+  meson compile -C build
+}
+
+package() {
+  cd "${_pkgname}-${pkgver}"
+  DESTDIR="${pkgdir}" meson install -C build --skip-subprojects
+  install -Dm644 LICENSE -t "${pkgdir}/usr/share/licenses/${pkgname}/"
+}
+
+# NOTE, added 2026-07-24: this PKGBUILD encodes the exact recipe already
+# verified working via a manual `meson setup` + `ninja` run in
+# libhybris/src/atlas-base/rootfs/build/gamescope-src (see
+# logs/2026-07-24.md) - same source, same pinned commits, same patches,
+# same meson flags, same stb_image_resize.h fix. It has NOT yet been run
+# through `makepkg` itself end-to-end (checksums are all SKIP, and
+# makepkg's own sandboxing/fakeroot behavior can surface issues a manual
+# root-shell build doesn't hit). Running `makepkg -g` to fill in real
+# checksums, then a real `makepkg` build, is the next concrete step - see
+# libhybris/docs/TECHNICAL_DEBT.md.

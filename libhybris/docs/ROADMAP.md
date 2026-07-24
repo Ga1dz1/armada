@@ -16,7 +16,7 @@ Status legend: 🔴 not started · 🟡 in progress · 🟢 mostly done · ✅ d
 
 **Blocking tasks:**
 - Real boot image for RP6 (kernel/DTB/ABL packing against this rootfs - not started)
-- Turning `gamescope`/`mesa` from raw `ninja install` into real `pacman`-tracked packages
+- Turning `mesa` from raw `ninja install` into a real `pacman`-tracked package (`gamescope` done - see `libhybris/packages/gamescope/PKGBUILD` as the reference pattern)
 - First real hardware boot test (blocked entirely until the above land - devices are unavailable until there's something to flash)
 
 **Resolved:** Steam Runtime URL fix - patched and verified end-to-end

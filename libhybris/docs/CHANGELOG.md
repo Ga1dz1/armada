@@ -8,6 +8,14 @@ newest first.
 
 ## 2026-07-24
 
+- `gamescope` turned into a real, tested `pacman` package
+  (`libhybris/packages/gamescope/PKGBUILD`) - built with `makepkg`,
+  installed via `pacman -U`, `pacman -Q` confirms tracking. Found and
+  fixed two real bugs while getting it right: a double-patch-apply bug,
+  and `arch-meson`'s `--wrap-mode=nodownload` blocking the
+  wlroots/libliftoff subproject auto-fetch (fixed by vendoring both as
+  pinned-commit tarballs). Removed stale `/usr/local` leftovers from the
+  earlier raw `ninja install` that were shadowing it via PATH.
 - Fixed the stale Steam Runtime URL in
   `build_files/generate-steam-bootstrap.sh` (Valve retired the
   `latest-public-beta` alias; now resolves the newest dated directory
