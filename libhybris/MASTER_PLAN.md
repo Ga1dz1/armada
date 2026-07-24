@@ -627,3 +627,96 @@ which compatibility layer ran
 whether the game was Android, Windows, Linux, or emulated
 
 If the player has to think about the platform, the architecture has failed.
+
+⸻
+
+PHASE 1 progress log (2026-07-24)
+
+Not part of the original plan text above - an execution log appended
+the same day, same pattern as the repository-structure/storage-
+architecture addenda earlier in this file. User confirmed PHASE 1 needs
+to be real, not more banked PHASE 4 work ("Нужен реальный"). Deliberately
+decoupled from the Halium/kernel work - using armada's own already-proven
+hardware support, not a new kernel, so this doesn't compound two risks at
+once (matches the plan's own "Hardware → Stability" priority ordering).
+
+**Real Arch Linux ARM rootfs bootstrapped, not just planned:**
+- Pulled the official `ArchLinuxARM-aarch64-latest.tar.gz` (818MB,
+  md5-verified against ALARM's own checksum), extracted to
+  `libhybris/src/atlas-base/rootfs/` (gitignored, ~3.6GB).
+- This build host is native aarch64, so no qemu/cross-arch complication -
+  chrooted directly. Real, working `pacman` + `systemd 261` confirmed
+  (`systemctl --version` output is real, not a stub).
+- Hit and fixed two real chroot issues: DNS didn't resolve (host uses
+  systemd-resolved's `127.0.0.53` stub which the chroot couldn't reach
+  cleanly - fixed by writing real nameservers directly into the chroot's
+  `/etc/resolv.conf`), and `pacman -Syu` failed with a "not enough disk
+  space" error despite 170GB free (`CheckSpace` gives false positives in
+  some sandboxed/bind-mount environments - a known pacman quirk, not a
+  real space issue; disabled via `pacman.conf`).
+- `pacman-key --init` + `--populate archlinuxarm`, then a real
+  `pacman -Syu` succeeded: 58 packages, systemd/btrfs-progs/
+  NetworkManager/sudo all installed cleanly (165+ packages total).
+
+**Found `armada-packages` (`github.com/Ga1dz1/armada-packages`) - the
+real patch/build source armada already uses, publicly clonable without
+a token** (the `PACKAGES_READ_TOKEN` from memory is for something else,
+maybe private CI pulls - the repo itself isn't private). Contains real,
+documented (`PATCHES.md`, provenance URLs) build recipes for `fex`,
+`gamescope`, `mesa`, `inputplumber`, `mangohud`, `jupiter-hw-support`,
+plus the kernel patches. This is the actual source of truth for what
+needs porting from Fedora/RPM to Arch/pacman - not something to guess at
+or reconstruct from memory.
+
+**Checked what's already available upstream in Arch Linux ARM's own
+repos vs. needs a custom build from `armada-packages`:**
+- `gamescope 3.16.25-1` is in `extra` - nearly identical to armada's own
+  pinned `3.16.24`. Same for `wlroots0.18`, `libliftoff 0.5.0`,
+  `mesa 26.1.5`. Installed the stock versions as a **PHASE 1 placeholder
+  only** - armada's own gamescope carries 6 patches on top
+  (`armada-packages/gamescope/patches/`), most importantly ROCKNIX's
+  rotation-shader patch which `BOOT_ARCHITECTURE.md` already documented
+  as load-bearing for RP6 (black screen without it). **The stock package
+  installed here will NOT work correctly on real RP6 hardware as-is** -
+  building the patched version from `armada-packages/gamescope/` is real
+  PHASE 3 work, not done yet, don't mistake this placeholder for finished
+  work.
+- `fex-emu` is **not** in Arch Linux ARM's standard repos at all - needs
+  building from `armada-packages/fex/` (real source + 2 patches +
+  `build-fex-sysroot.sh`) from scratch. Not attempted yet - FEX is needed
+  for Proton/Windows games, not for the Steam client itself, so it's
+  fine to defer past this initial PHASE 1 milestone.
+
+**Confirmed the Steam bootstrap mechanism is genuinely portable across
+distros** - ran armada's own `build_files/generate-steam-bootstrap.sh`
+unmodified inside the fresh Arch chroot. It successfully downloaded and
+unpacked the **real, official Valve ARM64 Steam client**
+(`steamdeck_publicbeta` channel, `bins_linuxarm64_linuxarm64.zip` from
+Steam's own CDN) - confirms this part needs no porting work at all, it's
+plain bash+python hitting Steam's CDN directly, no RPM/dnf/Fedora
+dependency anywhere in it.
+
+**Found a real bug, potentially affecting armada's current builds too,
+not just this new work**: the script's last step (downloading
+`steam-runtime-steamrt-arm64.tar.xz` from
+`repo.steampowered.com/steamrt3c/images/latest-public-beta/`) fails - not
+with a normal 403, but a `Google-Edge-Cache: encountered an internal
+error` / `Error: 118` response specifically on that `latest-public-beta/`
+path, while sibling `steampowered.com`/`steamstatic.com` endpoints
+(including the actual Steam client download) work fine. This looks like
+a stale/moved URL on Valve's CDN, not an environment/network-blocking
+issue on this end - worth checking whether armada's own current builds
+are hitting this same failure. Not yet root-caused further or reported
+anywhere; flagging here so it isn't lost.
+
+**Where this leaves PHASE 1**: a real, working Arch Linux ARM base
+(systemd/pacman/Btrfs-capable/networked) exists and is verified as far as
+it can be without booting real hardware. The mechanically separate pieces
+still needed before PHASE 1's actual exit criteria ("Power On → Steam")
+are met: building the patched `armada-packages` versions of
+gamescope/mesa (PHASE 3 work bleeding into PHASE 1's exit criteria, since
+"boot directly into Steam" needs a working display stack), building
+FEX-emu, resolving the steam-runtime URL issue, and - separately -
+actually integrating this rootfs with the real RP6 boot chain
+(`post_process/make-bootimg.sh`'s header-v0/ABL packing, using armada's
+own already-proven kernel+DTB, not the Halium-target one).
