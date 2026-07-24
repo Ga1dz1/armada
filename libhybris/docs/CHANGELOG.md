@@ -1,0 +1,51 @@
+# Changelog
+
+Terse, one line per real milestone. Full detail lives in
+`logs/YYYY-MM-DD.md`; this file is for scanning "what actually shipped,"
+newest first.
+
+⸻
+
+## 2026-07-24
+
+- Android-layer scope boundary decided (ADR-006): Android stays a thin
+  bridge to proprietary hardware (GPU/audio/camera/sensors/thermal/
+  power/vibrator/BT/Wi-Fi where needed), input/network/udev/systemd/
+  PipeWire/BlueZ stay native Linux wherever a working driver exists.
+- Documentation restructured: `MASTER_PLAN.md` split into
+  `MASTER_PLAN.md`/`ROADMAP.md`/`ARCHITECTURE.md`/`DECISIONS.md`/
+  `CHANGELOG.md`/`KNOWN_ISSUES.md`/`TECHNICAL_DEBT.md` + dated
+  `logs/`, per explicit user direction.
+- `MASTER_PLAN.md` (the full project plan) received from the user;
+  saved verbatim. Resolved the Halium-vs-ChromeOS-ARC ambiguity in
+  favor of Halium (ADR-002).
+- InputPlumber built and installed (armada's 2 patches, Rust/cargo,
+  ~5 min build) - device profiles, systemd unit, udev/polkit all in
+  place.
+- `armada-jupiter-hw-support` ported and installed (both armada
+  patches, no compile needed - pure shell/udev/polkit).
+- Mesa/Turnip built and installed, trimmed to freedreno+llvmpipe only
+  (full Arch build compiles every GPU vendor). Confirmed armada's A830
+  chip-ID patch present in the actual generated
+  `freedreno_devices.h`.
+- Gamescope built and installed with all 6 armada patches. Confirmed
+  `--use-rotation-shader` (load-bearing for RP6) compiled in.
+- Real Arch Linux ARM aarch64 rootfs bootstrapped
+  (`pacman`/`systemd 261`/`btrfs-progs` verified). Found
+  `armada-packages` (public, no token needed) as the real patch/build
+  source.
+- Confirmed armada's Steam bootstrap script is genuinely distro-
+  portable (downloads the real official Valve ARM64 Steam client).
+  Found and precisely root-caused a stale-URL bug in its last step
+  (steam-runtime, `latest-public-beta` no longer exists).
+- RP6: pulled real vendor/system Android partition images from an
+  official LineageOS build, confirmed genuine Adreno GPU vendor blobs
+  present.
+- RP6: built and locally verified a `systemd-nspawn`-based Halium
+  container prototype (real Android `/init` starts under it). Later
+  superseded in direction by Waydroid once `MASTER_PLAN.md`'s PHASE 4
+  was re-read (ADR-003).
+- RP6: pulled real kernel (Linux 5.15.208) + DTB + 241 vendor `.ko`
+  modules from an official LineageOS build, vermagic-verified.
+- Project rebrand noted: "CR(g) OS" / "Atlas OS" for new work only,
+  armada's existing repo/OTA untouched.
