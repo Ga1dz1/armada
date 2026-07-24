@@ -829,3 +829,18 @@ Both `gamescope` and `mesa`/Turnip - the two pieces flagged as
 PHASE 1/3-blocking placeholders earlier in this log - are now real,
 verified, patched builds sitting on disk (`libhybris/src/atlas-base/rootfs/build/`,
 gitignored), not gaps anymore.
+
+**Installed both into the rootfs for real** (`ninja -C build install` for
+each, not left as isolated build directories): mesa's Turnip ICD
+(`/usr/share/vulkan/icd.d/freedreno_icd.json`) and `msm_dri.so`/
+`kgsl_dri.so` driver aliases landed correctly; gamescope installed to
+`/usr/local/bin/gamescope` (its meson prefix defaults there, unlike
+mesa's `arch-meson`-set `/usr/prefix`) and resolves system-wide via PATH
+- `gamescope --help` from a plain shell (not a hardcoded path) still
+shows `--use-rotation-shader`. Known limitation, not yet addressed: this
+was a raw `ninja install`, not a real pacman package (`makepkg` →
+`.pkg.tar.zst`) - `pacman -Q` doesn't know about these files, and a
+future `pacman -Syu` would silently overwrite mesa's install with the
+stock unpatched version again. Turning both into real, `pacman`-tracked
+packages (matching how they'd actually ship) is follow-up work, not done
+this session.
