@@ -548,6 +548,33 @@ draft, not a working port yet.
 + `systemd-nspawn` instead of the LXC pre-start hook, and to find
 halium-system on the btrfs-subvolume-or-file layout instead of a classic
 Android partition table), and actually assembling a flashable boot.img.
+
+## 2026-07-24: boot.img packing toolchain verified end-to-end (round-trip)
+
+RP6 wasn't reachable over SSH from this environment (192.168.0.88 timed
+out) to attempt anything on real hardware, so stayed with work that's
+actually verifiable from here rather than writing unverifiable init-script
+guesses. Checked whether the packing half of the toolchain (not just
+unpacking) actually works:
+
+- Pulled `mkbootimg.py` + `repack_bootimg.py` + `gki/generate_gki_certificate.py`
+  from the same `system/tools/mkbootimg` googlesource repo
+  `unpack_bootimg.py` came from (same lightweight, no-build-tree approach).
+- **Round-trip test**: packed a fresh `boot.img` (header v4) from the
+  kernel already extracted from the real LineageOS `boot.img`, then
+  unpacked that repacked image again with `unpack_bootimg.py`. Result:
+  `os_version`/`os_patch_level`/header version all matched the original,
+  and `cmp` confirms the kernel bytes are **byte-identical** after the
+  pack→unpack round trip. (The repacked file is smaller than the original
+  100MB - expected, `mkbootimg.py` doesn't pad to the AVB-reserved
+  partition size the way LineageOS's own signed build does; irrelevant to
+  whether the tool works correctly.)
+- Confirms the actual packing tool works correctly on this real kernel,
+  not just the already-proven unpacking direction. This is the last piece
+  of infrastructure needed before assembling a real custom boot.img -
+  everything else now blocks on writing the actual init logic (needs
+  real hardware iteration, not more guessing) and having the initramfs
+  itself.
     (`android_kernel_ayn_qcs8550-modules`: audio-kernel, camera-kernel,
     securemsm-kernel, eva-kernel, graphics-kernel, bt-kernel) rather than a
     monolithic vendor kernel - a notably Halium/libhybris-friendly shape,
