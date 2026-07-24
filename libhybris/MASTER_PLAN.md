@@ -686,6 +686,16 @@ repos vs. needs a custom build from `armada-packages`:**
   `build-fex-sysroot.sh`) from scratch. Not attempted yet - FEX is needed
   for Proton/Windows games, not for the Steam client itself, so it's
   fine to defer past this initial PHASE 1 milestone.
+  **Checked its build.sh**: meaningfully bigger undertaking than
+  gamescope/mesa - requires `clang`/`lld`/`llvm` specifically (not gcc),
+  Qt6 for the config GUI, and a two-stage process where a whole separate
+  x86_64 sysroot gets built first (`build-fex-sysroot.sh`, its own
+  multi-package Fedora-based build) before FEX itself compiles against
+  it. Deliberately not started this session - genuinely deserves its own
+  dedicated pass rather than being squeezed in, and isn't required for
+  PHASE 1's actual exit criteria (native Linux Steam + native Linux
+  games need no x86 translation at all; FEX only matters once Proton/
+  Windows games enter the picture).
 
 **Confirmed the Steam bootstrap mechanism is genuinely portable across
 distros** - ran armada's own `build_files/generate-steam-bootstrap.sh`
