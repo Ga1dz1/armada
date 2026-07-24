@@ -6,6 +6,13 @@ real first step," per the earlier discussion about driver-support pain
 (DSI PLL issues, GPU OPP tuning, all the ROCKNIX-derived kernel patching this
 whole project has needed).
 
+**Naming note (added 2026-07-24):** the project is moving toward a new
+name, **CR(g) OS**, for new work going forward - this Halium/libhybris
+port is exactly that kind of new work, so treat it as CR(g) OS territory
+conceptually (kernel/DTB/module artifacts, the container/init design, the
+eventual boot flow). Nothing existing is being renamed: the armada repo,
+codebase, and OTA pipeline stay untouched and unaffected for now.
+
 ## What it actually buys us
 
 Halium's whole point is libhybris: a shim that lets a normal Linux userspace

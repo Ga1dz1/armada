@@ -5,6 +5,14 @@ lost. This is a philosophy/direction document, not an implementation plan -
 none of this is scheduled or committed to yet. It exists so the idea doesn't
 have to be re-derived from scratch in a future conversation.
 
+**Naming note (added same day):** the project is moving toward a new name,
+**CR(g) OS**, for new work going forward - this document describes new
+work (session UX, Android-apps-in-library), so treat it as CR(g) OS
+territory conceptually. Nothing existing is being renamed yet: the current
+armada codebase, repo, and OTA pipeline are untouched and unaffected by
+this - see the "already-shipped infrastructure" section below, which is
+existing armada work this new direction builds on top of, not replaces.
+
 ## The core claim
 
 SteamOS's pitch is "an OS for Steam." armada's pitch can be different: **an OS
