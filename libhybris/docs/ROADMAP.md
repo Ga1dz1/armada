@@ -187,8 +187,16 @@ Real progress so far (full detail: `SCOPING.md`, `ARCHITECTURE.md`):
   Waydroid explicitly**, so this hand-rolled prototype is likely getting
   replaced by Waydroid rather than continued (see `DECISIONS.md`) -
   don't treat the nspawn work as the committed path forward
-- ☐ Mini V2 has no official Android build at all - the "donor device for
-  vendor blobs" question is still open, not decided
+- ☑ **Resolved**: the Mini V2 "donor device" question is closed - the
+  user has official stock firmware for Mini, Mini V2, Flip2, and RP5 too
+  (each device's own real firmware, no donor-device compromise needed).
+  Not yet received/processed in this session.
+- ☑ Received and partially processed real **RP6 official stock
+  firmware** (richer than the LineageOS build - `CONFIG_ASHMEM=y`
+  already on, 306 vendor modules vs. 241) - likely becomes the primary
+  RP6 source going forward, see `ARCHITECTURE.md`/`logs/2026-07-24.md`.
+  `super_*.img` dynamic-partition extraction still needs
+  `lpunpack`/`simg2img` tooling, not yet set up.
 
 ⸻
 

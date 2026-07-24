@@ -8,6 +8,14 @@ newest first.
 
 ## 2026-07-24
 
+- **Retroid has officially authorized this project.** Received a
+  complete official RP6 stock firmware dump (QFIL/EDL format) -
+  genuinely richer than the LineageOS build used so far (`CONFIG_ASHMEM=y`
+  already on, 306 vendor modules vs. 241, exact toolchain match to the
+  already-cloned kernel source tree). User also has the same for Mini,
+  Mini V2, Flip2, and RP5 - closes the previously-open "donor device for
+  Mini V2's vendor blobs" question entirely (each device gets its own
+  real firmware, no donor compromise needed).
 - Removed all "armada" branding from new package names/metadata per
   explicit project direction (`gamescope-armada`/`mesa-armada` renamed to
   `gamescope`/`mesa`). Real provenance kept as internal developer

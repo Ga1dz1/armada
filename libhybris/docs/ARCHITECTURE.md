@@ -186,11 +186,25 @@ MVP-scoped, no `finalize-armada-image.sh`/partition-table changes
 needed). See "Storage architecture" below for the deeper Btrfs-vs-Android
 constraint this interacts with.
 
-**Mini V2 has no official Android build at all** - unlike RP6, there's no
-LineageOS (or any) Android build to pull vendor blobs from. The donor-
-device question (which other SM8250/Snapdragon-865 phone to borrow
-vendor blobs from) is open, not decided - flagged for the user, not
-guessed at.
+**Resolved 2026-07-24**: the donor-device question for Mini V2 (and
+Flip2, RP5) is no longer open. The user has official stock firmware
+dumps for Mini, Mini V2, Flip2, and RP5 too (same QFIL/EDL format as the
+RP6 one just processed - see `logs/2026-07-24.md`) - these are each
+device's own real, OEM-shipped kernel + vendor blobs, not a borrowed
+donor device's. No donor-device compromise needed for the SM8250 family
+at all. Not yet received/processed in this session - flagging that this
+gap is closed as soon as they're provided, not guessing at contents yet.
+
+**RP6 stock firmware already received and partially processed**
+(`libhybris/src/rp6-stock-firmware/`, gitignored) - genuinely richer than
+the LineageOS community build used earlier: `CONFIG_ASHMEM=y` already
+enabled (unlike Mini V2's own `RetroidPocket/linux` mainline tree, where
+the symbol doesn't exist at all), binder/binderfs already on by default,
+306 real vendor `.ko` modules (vs. 241 in the LineageOS build). Likely
+becomes the primary RP6 source going forward - not yet formally decided,
+see `logs/2026-07-24.md`. The `super_*.img` dynamic-partition images
+(real stock system/vendor/product) still need `lpunpack`/`simg2img`
+tooling to extract, not yet set up.
 
 **Android layer scope boundary** (ADR-006): Android is a thin bridge to
 proprietary hardware, not a second userspace. From Android: GPU, audio
