@@ -257,6 +257,26 @@ Two real paths forward, not yet decided:
    subvolume (an ordinary file from Btrfs's point of view) rather than a
    real Btrfs subvolume itself.
 
+**Path 1 checked directly, 2026-07-24 - it's a dead end, not a
+shortcut.** Tried building `btrfs.ko` as an out-of-tree module against
+`kernel/ayn/qcs8550` (Linux 5.15.208, matches the shipped kernel exactly)
+using the real extracted `.config`. The kernel is built with
+`CONFIG_CFI_CLANG=y` + `CONFIG_LTO_CLANG_FULL=y` + `CONFIG_MODVERSIONS=y`
+- Control Flow Integrity and full Link-Time-Optimization are Clang-only
+hardening features that fundamentally change function-pointer call-site
+ABI; a module built with a different compiler (tried this host's GCC)
+would not load into a CFI+LTO kernel at all, and `MODVERSIONS` additionally
+requires matching per-symbol CRCs from the *exact* original build's
+`Module.symvers`, which only exists as a build artifact we don't have (the
+shipped binary alone doesn't contain it). Getting a loadable module
+therefore needs the same near-exact toolchain match (Android's own
+`clang-r563880c`) and enough of a real rebuild to regenerate a matching
+`Module.symvers` - i.e. **this "lighter" path converges back onto the same
+from-source Bazel/Kleaf work already paused in SCOPING.md, not a shortcut
+around it.** Resolves the open question directly: outside of resuming that
+full rebuild, **path 2 (keep Android's own data off the unified Btrfs
+scheme) is the pragmatic choice.**
+
 ⸻
 
 Device Structure
