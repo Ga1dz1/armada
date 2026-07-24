@@ -714,6 +714,27 @@ Arch's standard repos and was skipped - it's a `Requires:` for an
 optional storage-testing helper, not load-bearing for the core
 automount/sshd-enable functionality this package exists for.
 
+**InputPlumber (armada's patched fork, `ShadowBlip/InputPlumber` at the
+pinned commit) built and installed too - Rust/cargo, both real armada
+patches applied cleanly** (the dpad signed-axis-button `CapabilityMap`
+fix, and the gamepad passthrough-config fix). `cargo build --release
+--target aarch64-unknown-linux-gnu` (all deps from crates.io, no vendoring
+needed) finished in ~5 minutes real wall-clock time - confirmed a real
+aarch64 ELF binary, ran `make install` (the project's own install target,
+matching what the RPM's `%install` does), verified `inputplumber
+--version` reports `0.77.2` from the actual installed `/usr/bin/inputplumber`.
+This also installed armada's own real device profile YAMLs
+(`/usr/share/inputplumber/devices/*` - the same `0X-*-controller.yaml`
+files referenced throughout this project's controller work) alongside the
+binary, systemd unit, udev rules/hwdb, and polkit policy.
+
+Running tally of the six main `armada-packages` gaming-stack components
+(`fex`/`gamescope`/`inputplumber`/`jupiter-hw-support`/`mangohud`/`mesa`):
+**gamescope, mesa/Turnip, jupiter-hw-support, and InputPlumber - four of
+six - are now real, patched, installed builds** on this Arch Linux ARM
+rootfs. Remaining: `fex` (deliberately deferred, see above) and
+`mangohud` (in progress).
+
 **Confirmed the Steam bootstrap mechanism is genuinely portable across
 distros** - ran armada's own `build_files/generate-steam-bootstrap.sh`
 unmodified inside the fresh Arch chroot. It successfully downloaded and
