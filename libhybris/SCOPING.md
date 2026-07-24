@@ -439,6 +439,68 @@ something to guess at without the user.
    a boot.img (`halium-boot`'s manual-repack recipe, or `mkbootimg.py` from
    the same `system/tools/mkbootimg` repo `unpack_bootimg.py` came from)
    against the RP6 kernel/DTB/modules already in hand.
+
+## 2026-07-24: pulled the real vendor/system partition images too - the actual payoff is confirmed real
+
+`boot.img`/`vendor_boot.img` only get you a bootable kernel - the actual
+Android *userspace* (GPU/media/sensor HAL blobs, the thing libhybris exists
+to bridge to) lives in separate partition images that aren't part of either
+file. Those only ship inside the full OTA package as an Android A/B update
+payload (`payload.bin` inside the flashable zip), not as individually
+downloadable files.
+
+- Pulled the full `lineage-23.2-20260718-nightly-RP6-signed.zip` (1.3GB,
+  sha256-verified against the API), extracted `payload.bin` (1.3GB).
+- Used `payload-dumper-go` (a real, independent, actively-maintained tool -
+  not Google's own; grabbed the official `linux_arm64` release binary,
+  sha256-verified, native aarch64 so no qemu needed at all) to list and
+  selectively extract partitions.
+- `payload-dumper-go -l` lists everything in the payload: firmware/baseband
+  blobs we don't need (`abl`, `aop`, `bluetooth`, `cpucp`, `dsp`, `hyp`,
+  `modem`, `tz`, `uefi`, `xbl`, etc. - these matter to a from-scratch
+  bootloader replacement, not to us, since armada already has its own
+  qcom-abl/GRUB boot chain per `BOOT_ARCHITECTURE.md`) alongside the ones
+  that actually matter for libhybris: `vendor` (842MB), `vendor_dlkm`
+  (79MB), `odm` (1.8MB), `system` (981MB), `system_ext` (566MB). Skipped
+  `product` (2.5GB, mostly bundled apps/UI, not HAL-relevant) to stay
+  disk-conscious. Total pulled: ~2.4GB, disk still fine (173GB free
+  afterward).
+- All five are real ext4 filesystem images (`file` confirms - extents,
+  large/huge files support). Verified by mounting `vendor.img` read-only:
+  **real, official Adreno GPU vendor blobs are present and intact** -
+  `libEGL_adreno.so`, `libGLESv2_adreno.so`, `libgralloc.qti.so`,
+  `vulkan.adreno.so`, `libq3dtools_adreno.so`, etc. under `lib64/` and
+  `lib64/egl/`. This is the actual payoff of the whole Halium approach,
+  and it's now *confirmed real*, not theoretical.
+- Also mounted `system.img` read-only: confirms the real System-as-Root
+  layout (its root **is** Android's actual `/`, with `vendor`/`odm`/
+  `product`/`system_ext`/`vendor_dlkm` as empty mountpoint directories
+  waiting for the other partition images to be mounted there at boot -
+  exactly the layered-mount structure `scripts/halium`'s
+  `mount_android_partitions()` builds at runtime). Confirmed a full,
+  real HIDL/AIDL HAL interface library set under `system/lib64/`
+  (`android.hardware.audio.*`, `.boot.*`, `.camera.*`, `.broadcastradio.*`,
+  etc., correctly versioned). Didn't find HAL *service* binaries under
+  `system/bin/hw/` (empty) - expected, those are vendor-provided and
+  likely live under `vendor.img`'s own `bin/hw/`, not checked yet.
+- Both mounts done read-only, cleanly unmounted after inspection - no
+  writes, no risk to the source images.
+
+All five images saved at
+`libhybris/src/rp6-lineageos-prebuilt/full-ota/dumped/` (gitignored,
+~2.4GB): `vendor.img`, `vendor_dlkm.img`, `odm.img`, `system.img`,
+`system_ext.img`. The full zip and `payload.bin` are also kept at
+`libhybris/src/rp6-lineageos-prebuilt/full-ota/` in case other partitions
+are needed later (e.g. `product` if some HAL turns out to live there
+unexpectedly).
+
+**Net result: everything the from-source Bazel/Kleaf path and the
+theoretical LXC/nspawn design were ultimately working toward is now
+sitting on disk, verified real.** Kernel, DTB, 241 vendor `.ko` modules,
+and now the actual vendor/system HAL blob partitions too. What's left is
+genuinely the design/assembly work: the nspawn container spec, the
+initramfs adaptation, and the btrfs storage layout (already decided) -
+no more "is this even real" uncertainty.
     (`android_kernel_ayn_qcs8550-modules`: audio-kernel, camera-kernel,
     securemsm-kernel, eva-kernel, graphics-kernel, bt-kernel) rather than a
     monolithic vendor kernel - a notably Halium/libhybris-friendly shape,
