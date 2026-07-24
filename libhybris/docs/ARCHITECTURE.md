@@ -202,9 +202,18 @@ enabled (unlike Mini V2's own `RetroidPocket/linux` mainline tree, where
 the symbol doesn't exist at all), binder/binderfs already on by default,
 306 real vendor `.ko` modules (vs. 241 in the LineageOS build). Likely
 becomes the primary RP6 source going forward - not yet formally decided,
-see `logs/2026-07-24.md`. The `super_*.img` dynamic-partition images
-(real stock system/vendor/product) still need `lpunpack`/`simg2img`
-tooling to extract, not yet set up.
+see `logs/2026-07-24.md`.
+
+**All real partitions extracted, no special tooling needed after all**:
+the `super_1.img`-`super_8.img` files turned out to be plain individually-
+mountable ext4 images (this flash tool's own naming, not Android dynamic-
+partition metadata) - `odm`/`product`/`system`/`system_dlkm`/
+`system_ext`/`vendor`/`vendor_dlkm` all extracted and saved at
+`libhybris/src/rp6-stock-firmware/partitions/`. **Confirmed with real
+evidence, not just argument**: mounted stock `vendor.img`, found the real
+Qualcomm Sensors HAL (`sensors.ssc.so`, `android.hardware.sensors@2.1.so`,
+calibration libs) - exactly the gyroscope/sensor capability the armada-
+kernel path (ADR-007) never would have provided.
 
 **Android layer scope boundary** (ADR-006): Android is a thin bridge to
 proprietary hardware, not a second userspace. From Android: GPU, audio
