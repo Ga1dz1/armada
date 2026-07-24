@@ -144,6 +144,35 @@ forked/patched by this project) - out of scope for a quick fix; either report
 upstream or start a `Ga1dz1/armada-packages/gamescope` fork if it's worth
 owning. Tracked as a known, non-blocking cosmetic issue for now.
 
+**Update, same session**: precise symptom description from the user (vertical
+line, ~1cm in from the left/right edge of the *displayed* landscape image, not
+literally at pixel 0) doesn't match a coordinate-transform boundary bug in the
+shader (that would sit at the exact edge). Checked `journalctl -u
+gamescope-session-plus@steam.service` on the live RP6 and found:
+
+```
+[gamescope] [Error] drm: Immediate flips are not supported by the KMS driver
+[gamescope] [Error] drm: Immediate flips disabled from environment
+```
+
+This points at real screen tearing: the msm/DPU KMS driver doesn't support
+immediate (async, non-vblank-synced) page flips, so gamescope falls back to a
+different present path - a plausible generic tearing mechanism under motion.
+
+**Correction**: don't overstate this as "caused by the rotation shader" - that
+part was unproven inference, not something the log actually shows. The
+"Immediate flips not supported" message is logged once at gamescope startup,
+almost certainly independent of whether `--use-rotation-shader` is active -
+it's a fixed property of the KMS driver, not something the shader triggers.
+The only two states actually tested were shader-on (picture + artifact) and
+shader-off (black screen, nothing to compare - the artifact's presence/
+absence without the shader was never actually observed). So this is real
+evidence of *a* tearing mechanism on this driver, but not evidence that
+rotation specifically causes it - it may well tear under motion on any
+device/config using this same DPU driver, shader or not. Diagnosis is
+"generic KMS tearing, likely" - not yet resolved, and not yet actually tied to
+rotation specifically.
+
 **Also found in the process**: `system_files/etc/gamescope-session-plus/sessions.d/steam`
 has a real, pre-existing, device-independent bug at (as of this writing) line
 147 - `[[ -n "${USE_ROTATION_SHADER:-}" ]] && ... && USE_ROTATION_SHADER_OPTION="--use-rotation-shader"`
