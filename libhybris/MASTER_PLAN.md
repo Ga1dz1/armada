@@ -709,6 +709,24 @@ issue on this end - worth checking whether armada's own current builds
 are hitting this same failure. Not yet root-caused further or reported
 anywhere; flagging here so it isn't lost.
 
+**Root-caused precisely**: fetched `repo.steampowered.com/steamrt3c/images/`'s
+real directory listing directly - there is no `latest-public-beta/` entry
+at all anymore, only date/build-numbered directories
+(`3c.0.20260316.216290/`, ..., newest currently `3c.0.20260618.246540/`).
+The `steam-runtime-steamrt-arm64.tar.xz` file genuinely still exists and
+is still published, just under the real versioned path, e.g.
+`repo.steampowered.com/steamrt3c/images/3c.0.20260618.246540/steam-runtime-steamrt-arm64.tar.xz` -
+confirmed that exact file is listed there. **The fix for
+`build_files/generate-steam-bootstrap.sh`**: scrape
+`https://repo.steampowered.com/steamrt3c/images/` for the newest
+`3c.0.*` directory (same pattern the script already uses to parse the
+Steam client manifest via `curl`+`python3`/regex) instead of hardcoding
+`latest-public-beta`. Not yet patched in this session - this is armada's
+own production script, a real fix deserves its own dedicated, reviewed
+commit rather than getting folded into this exploratory session's
+momentum. Flagging precisely so it's a two-minute fix whenever picked up,
+not another investigation.
+
 **Where this leaves PHASE 1**: a real, working Arch Linux ARM base
 (systemd/pacman/Btrfs-capable/networked) exists and is verified as far as
 it can be without booting real hardware. The mechanically separate pieces
