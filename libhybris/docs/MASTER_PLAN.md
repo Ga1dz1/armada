@@ -1,13 +1,21 @@
 MASTER PLAN
 Universal Gaming Platform
-Working Title: Atlas OS (Temporary)
+Name: CR(g)
 
 <!--
   Saved verbatim 2026-07-24 from the user's own project description, given
-  directly in conversation. Also referred to as "CR(g) OS" the same day
-  (see the project-rebrand-crg-os memory) - treat these as the same
-  project; "Atlas OS" appears to be an earlier/alternate working title in
-  this specific document, not a different project. Do not edit the plan
+  directly in conversation. The document's own original working title was
+  "Atlas OS (Temporary)"; the project also briefly went by "CR(g) OS" as
+  a full name. **Settled 2026-07-24: the real/display name is "CR(g)"**
+  (with parentheses) - use this in prose/branding contexts. **For file
+  paths, package names, identifiers, or anywhere parentheses would be
+  awkward or break things (shells, URLs, filesystems), use "CRg"**
+  (no parentheses) instead - same name, filesystem-safe spelling, not a
+  different name. Earlier references to "Atlas OS"/"CR(g) OS" (with
+  "OS" suffix) elsewhere in these docs/logs are left as-is (historical
+  record of the naming still being unsettled at the time), not
+  retroactively rewritten - ask before doing a full find-and-replace
+  across the existing docs if that's ever wanted. Do not edit the plan
   content itself without the user's direction - this is the canonical
   source of truth for what's being built and why.
 
