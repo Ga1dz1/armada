@@ -137,11 +137,11 @@ booting real hardware - see `ROADMAP.md` PHASE 1 and `logs/2026-07-24.md`
 for the full build log. Location: `libhybris/src/atlas-base/rootfs/`
 (gitignored).
 
-Four of the six `armada-packages` gaming-stack components are built,
+Five of the six `armada-packages` gaming-stack components are built,
 patched, and installed into this rootfs: `gamescope`, `mesa`(/Turnip),
-`inputplumber`, `jupiter-hw-support`. `mangohud` is in progress. `fex` is
-deliberately deferred (see `DECISIONS.md` - not required for PHASE 1's
-own exit criteria, and a meaningfully bigger build than the others).
+`inputplumber`, `jupiter-hw-support`, `mangohud`. `fex` is deliberately
+deferred (see `DECISIONS.md` - not required for PHASE 1's own exit
+criteria, and a meaningfully bigger build than the others).
 
 **Known gap**: these are raw `ninja install`/`make install`, not real
 `pacman`-tracked packages. See `TECHNICAL_DEBT.md`.

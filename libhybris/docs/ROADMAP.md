@@ -72,10 +72,14 @@ DONE:
 - ☑ Mesa/Turnip (armada's 3 patches, built trimmed to freedreno+llvmpipe, installed, A830 patch confirmed in generated output)
 - ☑ InputPlumber (armada's 2 patches, built, installed, device profiles included)
 - ☑ armada-jupiter-hw-support (both patches, installed, no compile needed)
+- ☑ MangoHud (armada's 6 patches, built, installed - real `kgsl`/`msm_dpu` GPU symbols confirmed in compiled output)
 - ☑ Steam bootstrap mechanism (confirmed distro-portable, real Valve ARM64 client downloads/unpacks)
 
+Five of six main `armada-packages` gaming-stack components are now real,
+patched, installed builds (`fex` deliberately deferred, see
+`KNOWN_ISSUES.md`).
+
 TODO:
-- ☐ MangoHud (armada's 6 patches, in progress)
 - ☐ Fix and apply the Steam Runtime URL bug (root-caused, fix documented, not patched)
 - ☐ Real boot image: kernel/DTB/ramdisk packed for RP6's actual ABL boot chain (`post_process/make-bootimg.sh`'s header-v0 conventions), using armada's own already-proven kernel+DTB for this base-OS milestone (not the Halium-target kernel - see `ARCHITECTURE.md` on why those are deliberately decoupled)
 - ☐ Turn `gamescope`/`mesa` raw `ninja install`s into real `pacman` packages (`makepkg`) - see `TECHNICAL_DEBT.md`

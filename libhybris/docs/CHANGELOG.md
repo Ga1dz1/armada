@@ -8,6 +8,10 @@ newest first.
 
 ## 2026-07-24
 
+- MangoHud built and installed (armada's 6 patches - Qualcomm GPU
+  support, SM8550/SM8750 GPU+battery, RAM/battery naming). Real
+  `kgsl`/`msm_dpu`/`msm_drm` symbols confirmed in the compiled output.
+  Five of six main armada-packages gaming-stack components now done.
 - Android-layer scope boundary decided (ADR-006): Android stays a thin
   bridge to proprietary hardware (GPU/audio/camera/sensors/thermal/
   power/vibrator/BT/Wi-Fi where needed), input/network/udev/systemd/
