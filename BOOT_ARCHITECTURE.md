@@ -120,3 +120,20 @@ just confirming the boot-style split is the right axis.
   matching the existing "SoCs whose ABL has its own per-device menu" path that
   already exists in the script for the no-SM8250-DTBs case) - `/KERNEL` (built
   by `make-bootimg.sh`, already correct) is all that's needed.
+
+## Future idea (not started): a native-DTB-pick SM8250 ABL
+
+Raised 2026-07-24, deliberately not folded into the split-image fix above -
+this is a much deeper, separate undertaking. If SM8250's ROCKNIX ABL build
+gained the same per-device DTB auto-pick that SM8550/8650/8750 ABL builds
+already have, SM8250 would move to the `qcom-abl` boot style too and GRUB
+would no longer be needed for *any* armada device - collapsing the whole
+split back to one universal image, and incidentally fixing the GRUB-menu
+button-press-reliability issues already noted elsewhere in this codebase
+(`finalize-armada-image.sh`'s own comments on Flip2/RP5). This is real
+bootloader/firmware engineering (patching or rebuilding ABL itself, not an
+armada script), needs its own research into whether ROCKNIX publishes SM8250
+ABL source at all vs. only prebuilt binaries, and how the SM8550-family ABL's
+own board-id/DTB matching is actually implemented as a reference. Track
+separately; don't let it block the split-image fix, which is scoped, safe,
+and unblocks RP6 today.
