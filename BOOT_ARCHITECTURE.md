@@ -173,6 +173,35 @@ device/config using this same DPU driver, shader or not. Diagnosis is
 "generic KMS tearing, likely" - not yet resolved, and not yet actually tied to
 rotation specifically.
 
+**Further update, same day**: also live-tested and ruled out (artifact
+persisted in every case): disabling `armada-gamescope-rt.service`
+(SCHED_RR promotion of compositor threads), switching the power profile
+from the fresh-install default of `eco` to `performance` (CPU ~3GHz, GPU
+680MHz vs the eco-capped 475MHz), and removing `--force-composition` from
+the gamescope launch (added in `85fbc80` only for the now-superseded
+kmsgrab ambilight path, confirmed not needed for anything else). Also
+compared package versions/patches against ROCKNIX and pocknix-os (both
+independently confirmed to need the exact same rotation-shader patch for
+this same MSM DPU limitation - not an armada-specific config issue): our
+gamescope (3.16.24) is ~3 weeks behind ROCKNIX's pinned commit
+(`428688779e...`), our mesa (26.1.4) is *newer* than ROCKNIX's (26.1.2)
+with no device-specific patches on either side for SM8550.
+
+**Bisection attempted, abandoned (not a negative result - just not
+finished)**: tried building gamescope from ROCKNIX's exact pinned commit to
+test live on RP6 whether the artifact was already fixed upstream. Hit an
+escalating chain of vendored-subproject issues specific to building from a
+raw commit instead of a release tarball: the `Allow-to-use-system-wlroots`
+patch conflicts with this commit's own wlroots 0.19 bump (system has 0.18);
+manually vendoring wlroots+libliftoff at their pinned submodule commits got
+past that, but wlroots itself then wants an `xserver` subproject (for
+xwayland support) not present as a system dependency either - a third
+nested layer, X.org's xserver being much larger than the first two.
+Abandoned here in favor of Halium work, not because the hypothesis is
+wrong - if picked back up, next step is vendoring an xserver subproject (or
+finding a distro that already ships gamescope built from a commit this
+recent, to test against without building it ourselves).
+
 **Also found in the process**: `system_files/etc/gamescope-session-plus/sessions.d/steam`
 has a real, pre-existing, device-independent bug at (as of this writing) line
 147 - `[[ -n "${USE_ROTATION_SHADER:-}" ]] && ... && USE_ROTATION_SHADER_OPTION="--use-rotation-shader"`
