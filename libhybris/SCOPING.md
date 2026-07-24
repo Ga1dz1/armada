@@ -336,6 +336,78 @@ RP6 now has a head start (real vendor modules + DTB in hand, zero build
 risk) but Mini V2 has no Android layer at all to borrow HAL blobs from
 (the donor-device question), so RP6 may honestly be the more tractable
 first target end-to-end. Flagging this shift rather than deciding it.
+
+## 2026-07-24: the real, current boot architecture is LXC-container-based, not a bare ramdisk - major finding
+
+`Halium/hybris-boot` (checked earlier, last pushed 2022) turned out to be
+legacy. Checked the org's actually-active repos instead (sorted by push
+date) and found the real, current toolchain: **`initramfs-tools-halium`**
+(pushed 2026-07-13 - six days before the RP6 nightly we pulled) +
+**`halium-boot`** (bootimg generator) + `lxc-android` ("Configuration for
+starting android inside LXC container") + `jumpercable`
+("System-As-Root boot helper") + `mechanicd` ("Manage Android-isms and
+kernel features on GNU/Linux systems"). This is a coherent, still-developed
+toolchain, not abandonware.
+
+**`initramfs-tools-halium` is genuinely standalone** - a Debian
+`initramfs-tools` hook set, built via `debootstrap` (no Android build tree
+needed at all), and it **publishes prebuilt continuous release binaries**:
+pulled `initrd.img-touch-arm64` from
+`github.com/Halium/initramfs-tools-halium/releases/tag/continuous`
+(sha256-verified, ~4MB compressed). Saved at
+`libhybris/src/initramfs-tools-halium/` (gitignored). Note: this prebuilt
+release is stale (last updated Jan 2023) but the logic itself is generic
+device bring-up, not device-specific, so it's still a legitimate reference
+even if we end up rebuilding it ourselves via `build-initrd.sh`.
+
+**Read `scripts/halium` (677 lines) - this is the real mount/boot
+architecture**, and it's a materially better fit for armada than the old
+`hybris-boot`/`.stowaways` model:
+
+1. `identify_boot_mode()` reads `androidboot.mode` off `/proc/cmdline` to
+   decide `halium` vs `android` boot (charger mode etc.) - the vendor boot
+   chain still exists underneath, we just don't normally take it.
+2. `mountroot()` finds Android's `/data`-equivalent partition, mounts it
+   at a temp mountpoint, then mounts the **actual target OS rootfs**
+   (`/halium-system`) - either a real partition, a loop-mounted image
+   file, or (classic approach) a directory inside the Android data
+   partition. This is what becomes PID 1 - **not Android**.
+3. It then loop-mounts Android's `system.img` (or `android-rootfs.img`)
+   and later `mount --move`s it into place for **`/var/lib/lxc/android/`**
+   - the vendor Android userspace runs **inside an LXC container**, as a
+     guest, not as the host OS. `mount_kernel_modules()` bind-mounts the
+     Android image's `/lib/modules` (exactly the 241 `.ko` files we
+     extracted from `vendor_boot.img`) into the real rootfs.
+4. Finally `switch_root`s into `/halium-system` - the real OS boots
+   normally from there.
+
+**Why this matters for armada specifically**: this is much closer to
+armada's own mental model (bootc/podman, containers as the isolation
+primitive) than the legacy approach - the "Android layer" is architecturally
+just a guest container that owns the GPU/media vendor blobs, not something
+that takes over the whole boot. It's plausible this could use podman
+instead of LXC (mechanicd/lxc-android would need checking - not done yet).
+
+**Why this is where autonomous work stops for now**: `mount_android_partitions()`
+/ `identify_file_layout()` assume a classic Android partition table (labeled
+`/data`, `/cache` etc., found by scanning `/dev/block/by-name` or similar).
+**armada's own disk image has none of that** - it's a single btrfs root on
+an SD card, GRUB-or-qcom-abl booted (see `BOOT_ARCHITECTURE.md`), no Android
+partition layout at all. Where the halium-system rootfs and the Android
+`system.img`/vendor blobs actually *live* on an armada install - a new
+partition carved out of the SD image, a subvolume, a plain file on the
+existing btrfs root - is a real storage-layout decision with real
+consequences (image size, OTA update story, A/B considerations), not
+something to guess at without the user.
+
+**Recommended next steps, in order, next time this is picked up:**
+1. Decide the storage layout question above.
+2. Check whether `lxc-android`/`mechanicd` could map onto podman instead of
+   LXC, given armada's own container tooling is already podman-based.
+3. Only then actually attempt building/adapting an initramfs + assembling
+   a boot.img (`halium-boot`'s manual-repack recipe, or `mkbootimg.py` from
+   the same `system/tools/mkbootimg` repo `unpack_bootimg.py` came from)
+   against the RP6 kernel/DTB/modules already in hand.
     (`android_kernel_ayn_qcs8550-modules`: audio-kernel, camera-kernel,
     securemsm-kernel, eva-kernel, graphics-kernel, bt-kernel) rather than a
     monolithic vendor kernel - a notably Halium/libhybris-friendly shape,
