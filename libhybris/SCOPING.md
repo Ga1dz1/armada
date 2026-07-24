@@ -501,6 +501,53 @@ and now the actual vendor/system HAL blob partitions too. What's left is
 genuinely the design/assembly work: the nspawn container spec, the
 initramfs adaptation, and the btrfs storage layout (already decided) -
 no more "is this even real" uncertainty.
+
+## 2026-07-24: first nspawn container draft, locally verified where possible
+
+Started on the actual container assembly, verifying everything checkable
+without real RP6 hardware:
+
+- **`libhybris/scripts/assemble-android-guest.sh`**: loop-mounts
+  `system.img` as the base (read-only) and `vendor`/`odm`/`system_ext`/
+  `vendor_dlkm` at their real mountpoints inside it - the same layered
+  structure Android itself builds at boot, and the same one
+  `scripts/halium`'s `mount_android_partitions()` builds. **Ran it for
+  real** (not just written, actually executed): assembled tree confirmed
+  correct, `vendor/lib64/libEGL_adreno.so` reachable at the expected path,
+  `/init` resolves (`/system/bin/init`, a real ARM64 PIE ELF binary,
+  confirmed with `file`). Cleanly unmounted after - read-only throughout,
+  no writes to the source images.
+- **`libhybris/nspawn/android-guest.nspawn`**: first draft of the
+  container spec, translated from `lxc-android`'s LXC config directive by
+  directive (`Boot=no` + `Parameters=/init` = LXC's `lxc.init_cmd = /init`;
+  `Private=no` under `[Network]` = LXC's `lxc.network.type = none`;
+  `DropCapability=CAP_MAC_ADMIN CAP_MAC_OVERRIDE` = LXC's matching
+  `lxc.cap.drop`). Checked every directive name against this machine's own
+  `man systemd.nspawn` - all real, not guessed syntax.
+- **Device node list wasn't guessed from general Qualcomm knowledge** -
+  mounted `vendor.img` again and grepped its own `etc/init`/`etc/`
+  ueventd/init rc files for actual device references:
+  `/dev/kgsl`/`kgsl-2d0`/`kgsl-2d1`/`kgsl-3d0` (GPU), `/dev/ion`,
+  `/dev/dma_heap` (memory allocation) all confirmed present in this
+  exact build's own configs. `/dev/binder`/`hwbinder`/`vndbinder` added
+  too (only `vndbinder` actually turned up in the text-config grep - the
+  others are kernel-created per `CONFIG_ANDROID_BINDER_DEVICES` and
+  referenced directly by compiled binaries, not text configs, so their
+  absence from the grep doesn't mean absence from the real requirement).
+
+**What's genuinely NOT verified, and can't be from a build host**: whether
+this actually boots. Android's `/init` needs binder/ashmem/ion kernel
+support, `androidboot.*` cmdline properties, and a kernel that's actually
+*this* one (5.15.208 qcs8550) - none of that can be meaningfully tested
+here. First real test has to happen on RP6 hardware. Flagging this clearly
+rather than implying the design is proven - it's a well-grounded first
+draft, not a working port yet.
+
+**Still not started**: the initramfs work (adapting
+`initramfs-tools-halium`'s `scripts/halium` to call `assemble-android-guest.sh`
++ `systemd-nspawn` instead of the LXC pre-start hook, and to find
+halium-system on the btrfs-subvolume-or-file layout instead of a classic
+Android partition table), and actually assembling a flashable boot.img.
     (`android_kernel_ayn_qcs8550-modules`: audio-kernel, camera-kernel,
     securemsm-kernel, eva-kernel, graphics-kernel, bt-kernel) rather than a
     monolithic vendor kernel - a notably Halium/libhybris-friendly shape,

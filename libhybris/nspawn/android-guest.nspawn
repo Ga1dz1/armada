@@ -1,0 +1,56 @@
+# systemd-nspawn settings for the Android vendor/HAL guest container.
+#
+# Translated from Halium's lxc-android config (var/lib/lxc/android/config),
+# which used LXC to run Android's own /init as a container PID 1, sharing
+# the host kernel, no OCI image involved. nspawn is a better fit than LXC
+# here (see libhybris/SCOPING.md, "2026-07-24" entry) - it's built for
+# exactly "boot another init tree, share the host kernel," and needs no
+# new dependency on a systemd-based distro like armada/CR(g) OS.
+#
+# Rootfs: point --directory= at a tree assembled by
+# libhybris/scripts/assemble-android-guest.sh (system.img's root plus
+# vendor/odm/system_ext/vendor_dlkm loop-mounted at their real mountpoints
+# - NOT a single image, Android's own boot process expects this layered
+# structure).
+#
+# NOT YET TESTED ON REAL HARDWARE. Device node list below was pulled by
+# grepping this exact build's own vendor init/ueventd configs (not
+# guessed from general Qualcomm knowledge) - see SCOPING.md for how. May
+# still be incomplete; verify against dmesg/logcat on first real boot
+# attempt and extend as needed.
+
+[Exec]
+# Run Android's own /init directly as the container's PID 1 - do NOT use
+# nspawn's --boot mode, that does systemd-specific OS detection Android's
+# init.rc-based init doesn't match.
+Boot=no
+Parameters=/init
+
+# lxc-android dropped mac_admin/mac_override only; keep broad capabilities
+# otherwise - HAL processes need real device access (GPU, binder, etc.),
+# not a locked-down container.
+DropCapability=CAP_MAC_ADMIN CAP_MAC_OVERRIDE
+
+[Network]
+# lxc-android used `lxc.network.type = none` - no network namespace
+# isolation, share the host's networking directly (Android's own
+# networking stack isn't what's being used here, the host/armada owns
+# the actual interfaces).
+Private=no
+
+[Files]
+# Real device nodes the vendor HAL blobs need, confirmed present in this
+# exact build's own init/ueventd rc files (grepped from the assembled
+# vendor.img, not guessed):
+Bind=/dev/kgsl
+Bind=/dev/kgsl-2d0
+Bind=/dev/kgsl-2d1
+Bind=/dev/kgsl-3d0
+Bind=/dev/ion
+Bind=/dev/dma_heap
+# Binder devices: not found via grep (they're kernel-created per
+# CONFIG_ANDROID_BINDER_DEVICES, not referenced in text configs), but
+# virtually certain to be needed - HIDL/AIDL HAL IPC depends on them.
+Bind=/dev/binder
+Bind=/dev/hwbinder
+Bind=/dev/vndbinder
