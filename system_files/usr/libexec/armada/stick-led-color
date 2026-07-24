@@ -398,7 +398,7 @@ class ReactiveInput:
             self.flash = 0.0
 
 
-REACTIVE_DEADZONE = 0.12  # below this magnitude, treat the stick as centered/idle (off)
+REACTIVE_DEADZONE = 0.15  # below this magnitude, treat the stick as centered/idle (off)
 
 
 def stick_reactive_rgb(x, y, floor):
@@ -1260,6 +1260,9 @@ def print_state():
         print(f"duotone_color_a_{side}={s['duotone_color_a']}")
         print(f"duotone_color_b_{side}={s['duotone_color_b']}")
         print(f"duotone_orientation_{side}={s['duotone_orientation']}")
+        print(f"chase_{side}={'1' if s['chase'] else '0'}")
+        print(f"compass_{side}={'1' if s['compass'] else '0'}")
+        print(f"seesaw_{side}={'1' if s['seesaw'] else '0'}")
         for param in PARAM_SPECS:
             for m in PARAM_SPECS[param]["modes"]:
                 print(f"{param}_{m}_{side}={get_param(s['settings'], param, m):.3f}")
