@@ -697,6 +697,23 @@ repos vs. needs a custom build from `armada-packages`:**
   games need no x86 translation at all; FEX only matters once Proton/
   Windows games enter the picture).
 
+**`armada-jupiter-hw-support` ported and installed - the simplest of the
+components so far.** Unlike gamescope/mesa/InputPlumber, this one's spec
+has an entirely empty `%build` section (`BuildArch: noarch`) - it's pure
+shell scripts (storage/SD-card automount helpers), udev rules, and
+polkit policy/rules files, no compilation at all. Fetched the real
+upstream (`gitlab.com/evlaV/jupiter-hw-support`, Valve's own Steam Deck
+hardware-support package) at the pinned tag, applied both real armada
+patches cleanly (storage-behavior adaptations for the `armada` user;
+polkit-helper safety - hostname validation before `hostnamectl`, explicit
+`sshd.service` target), then placed the files at the exact paths the
+spec's `%install` section specifies. Verified the `sshd.service` polkit
+patch landed for real in the installed file, not just applied to the
+source. One dependency (`f3`, a flash-fraud-detection tool) isn't in
+Arch's standard repos and was skipped - it's a `Requires:` for an
+optional storage-testing helper, not load-bearing for the core
+automount/sshd-enable functionality this package exists for.
+
 **Confirmed the Steam bootstrap mechanism is genuinely portable across
 distros** - ran armada's own `build_files/generate-steam-bootstrap.sh`
 unmodified inside the fresh Arch chroot. It successfully downloaded and
