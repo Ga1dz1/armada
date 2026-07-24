@@ -52,11 +52,15 @@ log "watching $pdev"
 # Long-press fires while still held, not on release.
 LONG_MS=1000
 # Real suspend (see the 50-armada-real-suspend systemd-sleep hook) grabs the
-# power key for a couple seconds right after resume, which handles this in
-# the common case - this is a backstop for the race where our own reader
-# wakes up and sees the wake press before that grab lands. Any press within
-# this many ms of a recorded resume is treated as wake noise, not a request.
-REBOUND_GUARD_MS=2500
+# power key for a couple seconds right after resume, which handles the wake
+# press's own echo in the common case - this is a backstop for the race
+# where our own reader wakes up and sees that echo before the grab lands.
+# Beyond just the echo, this is also a deliberate post-resume grace period:
+# a genuine short press this soon after waking is far more likely to be an
+# accidental press (pocket, still settling in) than an intentional request
+# to sleep again immediately - any press within this many ms of a recorded
+# resume is swallowed as a rebound guard, not treated as a request.
+REBOUND_GUARD_MS=30000
 RESUME_FLAG="/run/armada/real-suspend.resumed-at"
 
 just_resumed() {

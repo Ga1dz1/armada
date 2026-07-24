@@ -33,6 +33,21 @@ name: Retroid Layout (Flip2)
 # the capability map or kernel driver (both confirmed identical to
 # ROCKNIX's own, which doesn't have this bug). Unverified on real Flip2
 # hardware as of this commit - out for the original reporter to test.
+#
+# Follow-up (2026-07-23): confirmed working (buttons correct) by the
+# reporter, but ds5 loses Deck-specific integration the other devices get
+# on deck-uhid. Checked InputPlumber's own source directly (not another
+# unverified third-party claim this time - ShadowBlip/InputPlumber,
+# src/input/target/steam_deck_uhid.rs + src/drivers/steam_deck/hid_report.rs)
+# for a deck-uhid-internal Start/Select bug to fix in place of swapping
+# targets - found none: GamepadButton::Start maps to `menu` (hamburger ☰,
+# right button) and GamepadButton::Select maps to `options` (overlapping
+# squares ⧉, left button), the correct standard Deck-hardware semantic.
+# Same capability map and InputPlumber mapping as the working Mini V2 -
+# whatever causes the swap on real Flip2 hardware specifically isn't
+# visible in any source checked so far. Staying on ds5 (known-working)
+# until this can be root-caused with real hardware (evtest capture during
+# the swap) instead of guessed at again.
 matches:
   - udev:
       sys_path: /sys/firmware/devicetree/base
