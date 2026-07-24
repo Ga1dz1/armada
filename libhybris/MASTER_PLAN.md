@@ -738,3 +738,43 @@ FEX-emu, resolving the steam-runtime URL issue, and - separately -
 actually integrating this rootfs with the real RP6 boot chain
 (`post_process/make-bootimg.sh`'s header-v0/ABL packing, using armada's
 own already-proven kernel+DTB, not the Halium-target one).
+
+**Update, same session: patched gamescope actually built successfully -
+real, not a placeholder anymore.** Took the "gamescope/mesa still need
+armada's patched build" gap above and closed it for gamescope. Cloned
+upstream `ValveSoftware/gamescope` at the exact pinned tag (`3.16.24`,
+matching `armada-packages/gamescope/BASE.env`), vendored `reshade` and
+`vkroots` at their exact pinned commits (`696b14c`/`5106d8a`, matching
+`gamescope.spec`'s `%global` pins, fetched as tarballs from the same
+`misyltoad` forks the spec uses), applied all 6 real
+`armada-packages/gamescope/patches/*.patch` files cleanly (no `.rej`
+files, verified), then ran the exact same `meson setup` flags from
+`gamescope.spec`'s `%build` section unmodified.
+
+Hit one real, legitimate version-skew issue: Arch's `stb` package only
+ships `stb_image_resize2.h` (upstream stb renamed/rewrote this at some
+point), while this gamescope version's source still expects the old
+`stb_image_resize.h`. Fixed by fetching the exact same file from stb's
+own upstream repo (`nothings/stb`, now living under `deprecated/` there)
+and placing it alongside the installed package's headers - not a patch
+to gamescope's source, a real missing-header gap in how Arch packages
+`stb` versus what Fedora's `stb_image-devel` (which armada's real build
+uses) still ships.
+
+**Result: `ninja -C build` completed 186/186 targets, including the real
+`src/gamescope` binary.** Verified it's real, not just "didn't error out":
+`file` confirms a genuine aarch64 PIE ELF, `ldd` shows a full, coherent
+set of resolved runtime dependencies (wayland, X11/Xwayland, libdrm,
+SDL2, libinput, libseat, etc.), and - the actual point of doing this at
+all - **`gamescope --help` lists `--use-rotation-shader`, and `strings`
+confirms it's compiled in.** This is the flag `BOOT_ARCHITECTURE.md`
+already documented as load-bearing for RP6 (black screen without it) -
+confirms the patch that matters most for this hardware is genuinely
+present in this Arch-built binary, not just assumed carried over.
+
+Not yet done: `ninja install` / actually placing this into the rootfs
+properly (Wayland/Vulkan layer JSON paths, etc.), and this only proves
+*compiles correctly* - whether it *runs* correctly still needs real RP6
+hardware (GPU driver, DRM/KMS, real display). `mesa`/Turnip (with
+armada's own 3 patches from `armada-packages/mesa/`) is the next piece in
+the same category, not attempted yet this session.
