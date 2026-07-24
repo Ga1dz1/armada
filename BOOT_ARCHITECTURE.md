@@ -121,6 +121,44 @@ just confirming the boot-style split is the right axis.
   already exists in the script for the no-SM8250-DTBs case) - `/KERNEL` (built
   by `make-bootimg.sh`, already correct) is all that's needed.
 
+## Known issue (not GRUB/boot related): rotation-shader edge artifact on RP6
+
+Found live 2026-07-24 during the first successful RP6 boot with the boot-style
+fix above. A thin (few-pixel) strip artifact appears during animation.
+Root-caused live by toggling `gamescope`'s `--use-rotation-shader` flag (the
+config plumbing to do this cleanly turned out to itself have a bug - see
+below):
+
+- **With** `--use-rotation-shader`: picture is correct except for the strip
+  artifact during motion.
+- **Without** it: black screen, no picture at all.
+
+So the shader is load-bearing for RP6 (its panel needs the software rotation
+path, not just DRM-native rotation) and is also the source of the artifact -
+consistent with a known class of bug (bilinear edge-sampling bleed at a
+rotated framebuffer's boundary, only visibly noticeable once content moves
+through that edge). Fixing it for real means patching gamescope's own shader,
+which armada currently consumes as a prebuilt package
+(`ghcr.io/virtudude/armada-packages/gamescope`, upstream-built, not
+forked/patched by this project) - out of scope for a quick fix; either report
+upstream or start a `Ga1dz1/armada-packages/gamescope` fork if it's worth
+owning. Tracked as a known, non-blocking cosmetic issue for now.
+
+**Also found in the process**: `system_files/etc/gamescope-session-plus/sessions.d/steam`
+has a real, pre-existing, device-independent bug at (as of this writing) line
+147 - `[[ -n "${USE_ROTATION_SHADER:-}" ]] && ... && USE_ROTATION_SHADER_OPTION="--use-rotation-shader"`
+tests *non-emptiness*, not the actual value, and line 17's
+`USE_ROTATION_SHADER="${ARMADA_GAMESCOPE_USE_ROTATION_SHADER:-0}"` means the
+variable can never end up truly empty through normal config (unset/empty
+input both resolve to the string `"0"`, which itself is non-empty and still
+passes `-n`). **`ARMADA_GAMESCOPE_USE_ROTATION_SHADER=0` (or unset) in any
+device's `.conf` currently has no effect at all - the shader always gets
+enabled if gamescope supports the flag, for every device**, not just RP6.
+This was never caught before because RP6 is the first device where anyone
+went looking to actually turn it off. Not fixed yet - needs
+`[[ "${USE_ROTATION_SHADER:-0}" != 0 ]]` (verified live during this
+investigation) instead of the current `-n` check.
+
 ## Future idea (not started): a native-DTB-pick SM8250 ABL
 
 Raised 2026-07-24, deliberately not folded into the split-image fix above -

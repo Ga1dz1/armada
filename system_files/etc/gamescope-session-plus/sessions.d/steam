@@ -144,7 +144,12 @@ CUSTOM_REFRESH_RATES_OPTION=""
 [[ -n "${CUSTOM_REFRESH_RATES:-}" ]] && gamescope_has_option "--custom-refresh-rates" && CUSTOM_REFRESH_RATES_OPTION="--custom-refresh-rates $CUSTOM_REFRESH_RATES"
 
 USE_ROTATION_SHADER_OPTION=""
-[[ -n "${USE_ROTATION_SHADER:-}" ]] && gamescope_has_option "--use-rotation-shader" && USE_ROTATION_SHADER_OPTION="--use-rotation-shader"
+# Was `-n` (non-empty), which "0" also satisfies - since line 17 defaults an
+# unset/empty ARMADA_GAMESCOPE_USE_ROTATION_SHADER to the string "0", this
+# never actually turned the shader off for any device. Confirmed live on RP6
+# (BOOT_ARCHITECTURE.md) while root-causing an animation artifact: needed
+# the shader genuinely off to test, and the old check wouldn't allow it.
+[[ "${USE_ROTATION_SHADER:-0}" != 0 ]] && gamescope_has_option "--use-rotation-shader" && USE_ROTATION_SHADER_OPTION="--use-rotation-shader"
 
 BACKEND_OPTION=""
 [[ -n "${BACKEND:-}" ]] && gamescope_has_option "--backend" && BACKEND_OPTION="--backend $BACKEND"
