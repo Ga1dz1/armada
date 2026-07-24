@@ -48,15 +48,38 @@ FEX itself compiles against it). Deliberately deferred, not attempted.
 
 ⸻
 
-### Real boot image for RP6 not built yet
+### ~~Real boot image for RP6 not built yet~~ — SUPERSEDED
 
-**Found**: 2026-07-24 (never actually started). **Severity**: blocks all
-real hardware testing - devices are unavailable until there's something
-flashable.
+**Found**: 2026-07-24. **Resolved (differently than planned)**: 2026-07-24,
+same day - built, boot-tested on real hardware, hit a real hang, root
+caused it (LZ4 vs gzip ramdisk compression mismatch), fixed it, and
+independently proved a real Arch Linux ARM userspace runs on the device
+via a late chroot-based handoff instead of the originally planned
+first-stage `switch_root`. See `CHANGELOG.md` and `logs/2026-07-24.md`
+for the full story.
 
-See `ARCHITECTURE.md` "Boot chain" for the plan (reuse armada's own
-kernel+DTB, armada's `make-bootimg.sh` header-v0/ABL conventions, the new
-Arch rootfs/initramfs). Not started.
+⸻
+
+### `userdata` is FBE-encrypted - blocks first-stage `switch_root` as planned
+
+**Found**: 2026-07-24, live on real RP6 hardware. **Severity**: blocks
+the original plan of a first-stage custom `/init` mounting the raw
+`userdata` partition and reading a rootfs image file directly from it -
+does NOT block the current testing approach (late chroot handoff after
+Android's own boot unlocks FBE).
+
+`ro.crypto.type=file`, `ro.crypto.state=encrypted`, `/data` is F2FS with
+`inlinecrypt`. A bare custom initramfs `/init` has no way to derive the
+per-file/per-directory fscrypt keys Android's own vold/keystore/TEE
+stack unlocks at boot - so a rootfs image file living under an encrypted
+path would read as garbage if accessed before Android's own userspace
+unlocks it. Repartitioning `userdata` to carve out a dedicated
+unencrypted partition is possible in principle (armada's own installer,
+`system_files/usr/libexec/armada/armada-installer`, has real proven
+GPT-surgery logic for exactly this class of operation) but not F2FS/FBE
+aware, and there's no free disk space on this unit to do it without
+shrinking the live encrypted filesystem - deferred, not attempted.
+Revisit once the late-handoff approach's own limits are understood.
 
 ⸻
 

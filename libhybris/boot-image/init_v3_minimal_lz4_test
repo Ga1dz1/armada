@@ -1,0 +1,5 @@
+#!/bin/busybox sh
+/bin/busybox mount -t devtmpfs devtmpfs /dev 2>/dev/null
+echo "atlas-init: v3 MINIMAL - alive, sleeping 10s then reboot" > /dev/kmsg 2>/dev/null
+/bin/busybox sleep 10
+/bin/busybox reboot -f

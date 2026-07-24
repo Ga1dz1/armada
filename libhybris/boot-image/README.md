@@ -1,9 +1,14 @@
-# RP6 first boot test - CR(g) OS / Atlas OS
+# RP6 first boot test - CR(g)
 
-**Not yet tested on real hardware.** This is a carefully-reasoned first
-attempt, not a proven-working image. Full technical detail:
-`libhybris/docs/logs/2026-07-24.md`. Read this whole file before flashing
-anything.
+**Status 2026-07-24: revision 1 (`init_boot.img`) confirmed to hang
+indefinitely on the bootloader's static splash logo on real hardware.**
+Reverting to `init_boot_stock.img` (verified byte-identical to the real
+factory image) restores normal Android boot - this isolates the failure
+to the custom ramdisk itself, not slot/flash-process/AVB-lockout issues.
+
+**`init_boot_v2_diag.img` is the current thing to test.** It's a
+diagnostic revision, not a fix - see "Revision 2 (diagnostic)" below.
+Full technical detail: `libhybris/logs/2026-07-24.md`.
 
 ## What this is
 
@@ -66,6 +71,51 @@ able to get a prompt and poke around even if the full switch_root doesn't
 happen - e.g. check `ls /dev/block/by-name/` to see if `userdata` shows
 up under a different path than expected, or `ls /mnt/userdata/atlas/` to
 check the rootfs.img push landed correctly.
+
+## Revision 2 (diagnostic): `init_boot_v2_diag.img`
+
+There's no serial console on this hardware, so revision 1's "drop to an
+interactive busybox shell on failure" looks *identical* to a true hang -
+both are just a frozen logo, forever. That means the confirmed hang
+doesn't actually tell us whether:
+
+(a) the kernel/AVB rejects or never even loads this ramdisk at all, or
+(b) the ramdisk **does** run, hits some failure (e.g. `userdata` never
+    shows up, `rootfs.img` missing/wrong path, loop-mount fails), and
+    silently sits at an invisible shell prompt.
+
+`init_boot_v2_diag.img` replaces every failure path with a **forced
+reboot** instead of a silent shell (`reboot_now()` - logs to `/dev/kmsg`,
+sleeps 3s, `reboot -f`), plus an unconditional 20-second watchdog reboot
+as a backstop in case something hangs without hitting an explicit check.
+It's still not a fix - it's purely to make (a) and (b) look different
+from each other.
+
+**How to test:**
+```
+fastboot flash init_boot init_boot_v2_diag.img
+fastboot reboot
+```
+Then just watch the device for about 30-40 seconds:
+- **If it reboots on its own** (device goes dark/logo flashes again,
+  possibly looping) - the ramdisk **is** executing, and failing at one of
+  the mount/rootfs steps. That's real progress - it means (b), and the
+  next step is narrowing down which check is failing (most likely: the
+  `rootfs.img` push to `/data/atlas/rootfs.img` didn't happen yet for
+  this test, since this diagnostic round doesn't require it to have
+  landed - the watchdog alone would cause a reboot at ~20s if nothing
+  else fires first).
+- **If it hangs on the exact same static logo with zero change**,
+  indefinitely, past 40+ seconds with no reboot - that points to (a),
+  meaning the problem is at the kernel/bootloader/AVB level before any
+  userspace code in this ramdisk runs at all, and the next step is
+  looking at that layer (AVB signing/rollback index on `init_boot`,
+  header_version/kernel_size=0 assumptions, etc.) rather than the shell
+  script.
+
+If you can grab `adb shell su -c 'dmesg | grep atlas-init'` or a
+`last_kmsg` right after either outcome, that would confirm exactly which
+step it reached, if any.
 
 ## What's genuinely unverified
 

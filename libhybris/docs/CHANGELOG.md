@@ -8,6 +8,42 @@ newest first.
 
 ## 2026-07-24
 
+- **First real Arch Linux ARM userspace running on physical RP6
+  hardware.** Rooted the device for real (Magisk-patched `init_boot`,
+  verified `su -c id` → uid=0), pushed the built `rootfs.img` to
+  `/sdcard`, `losetup`+`mount`+`chroot`ed into it live over `adb`.
+  `pacman -Q` lists all 422 real installed packages from inside the
+  chroot; `gamescope --version` ran and printed its real startup banner
+  - first time any built component of this project has executed on
+    target hardware, not just been built/inspected. Device fully
+    recoverable throughout (`fastboot flash init_boot` round-trips
+    cleanly between stock/rooted/test images).
+- **Found and fixed the real cause of the boot-image hang**: the
+  ramdisk-format compression didn't match. `vendor_boot.img`'s vendor
+  ramdisk fragment is LZ4-compressed (legacy/kernel frame format); our
+  custom `init_boot.img` ramdisk was gzip. A combined initrd can't mix
+  compression algorithms - the kernel decompresses the whole
+  concatenated blob with one algorithm, so the gzip half was unreadable
+  garbage to it, hanging with zero observable signal (no panic text, no
+  USB re-enumeration, confirmed via 90-150s of continuous live
+  `adb`/`fastboot` polling on real hardware). Rebuilding the ramdisk
+  with `lz4 -l` fixed it - confirmed via the device visibly
+  rebooting/blinking on the test script's own timer.
+- **New real blocker found and worked around for now**: `userdata` is
+  FBE-encrypted (`ro.crypto.type=file`, F2FS+`inlinecrypt`) - a bare
+  custom first-stage `/init` can't decrypt user files without Android's
+  own vold/keystore/TEE unlock. Checked repartitioning as a fix
+  (confirmed via armada's own real, tested installer logic at
+  `system_files/usr/libexec/armada/armada-installer` that this class of
+  operation is solvable) but deferred it - no free disk space exists
+  (`userdata` already runs to within ~2MiB of the physical disk end),
+  making it a live-shrink of an in-use encrypted filesystem, and no
+  microSD is currently inserted as a safer alternative. Pragmatic
+  decision for now: let Android boot fully (unlocks FBE naturally), push
+  `rootfs.img` to `/sdcard`, and pivot in via a late chroot-based handoff
+  instead of a first-stage `switch_root` - explicitly a testing
+  simplification, proper architecture (dedicated partition or real
+  first-stage handoff) deferred to revisit later.
 - **First real, flashable RP6 boot-image test built and delivered**
   (`/media/psf/Unreal/CRgOS_boot_test_20260724/`). Stock `boot`/
   `vendor_boot`/`dtbo` kept unchanged; `init_boot.img`'s ramdisk replaced
