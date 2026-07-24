@@ -95,6 +95,182 @@ SM8250 ever did: **official LineageOS support**, not a community fork.
   line. Depends on:
   - `LineageOS/android_kernel_ayn_qcs8550` - the actual kernel source, GKI
     (Generic Kernel Image) architecture with loadable vendor modules
+
+## 2026-07-24: RP6 from-source kernel build attempt — paused, here's why
+
+Tried to actually build `kernel/ayn/qcs8550` for real, following the
+targeted-clone method that worked for Mini V2. Documenting in full because
+this took a lot of investigation and the next person picking this up
+(possibly future me) shouldn't have to re-derive it.
+
+**The architecture is heavier than Mini V2's.** `RetroidPocket/linux` is a
+single self-contained Kbuild tree (its own Makefile/Kconfig/arch, `make
+ARCH=arm64 defconfig && make Image dtbs` just works). `kernel/ayn/qcs8550`
+is NOT that - its own `build.config.msm.kalama` sources
+`${ROOT_DIR}/msm-kernel/build.config.common`, i.e. this is Qualcomm's split
+**msm-kernel (base) + vendor-hook overlay** design. The real kernel source
+lives in a sibling `msm-kernel` repo we haven't even cloned yet. Google's
+own build orchestration for this generation of kernel is Bazel/Kleaf
+(bzlmod), not a plain `make` invocation - there is no legacy `build.sh`
+fallback on the `main-kernel` branch of `build/kernel` (it was removed once
+that branch went bzlmod-only).
+
+**Chased the Bazel/Kleaf dependency chain a long way, in order:**
+1. `kernel/ayn/qcs8550`'s own `BUILD.bazel` uses `define_common_kernels` -
+   Kleaf, confirmed no legacy WORKSPACE path exists on `main-kernel`.
+2. `build/kernel/kleaf/bzlmod/bazel.MODULE.bazel` is the authoritative dep
+   list: ~17 `local_path_override`'d Bazel modules under `external/`
+   (bazel_skylib, rules_cc/python/pkg/shell/rust/license/devicetree,
+   protobuf, zlib, zstd, abseil-cpp/py, platforms, bazel_features,
+   package_metadata) plus several `kleaf_local_repository`-style prebuilt
+   tool deps (dwarves, libcap, kmod, dtc, lz4, toybox, zopfli, pigz, avb,
+   argp-standalone, obstack, stg) plus NDK/Rust-toolchain prebuilts (the
+   latter two look GBL-bootloader-only, probably skippable for our target).
+3. The `prebuilts/kernel-build-tools` bundled `bazel` binary is **x86_64**.
+   Under `qemu-user-static` emulation it crashed - `[Too many errors,
+   abort]`, `uncaught target signal 6` - because Bazel bundles a JVM, and
+   JVMs are unreliable under user-mode QEMU (JIT/signal handling doesn't
+   translate well). Fixed by adding a scoped `amd64`-only apt source
+   (`archive.ubuntu.com`, since the configured mirror is `ports.ubuntu.com`
+   which doesn't carry amd64) to install `libc6:amd64`/`libstdc++6:amd64`
+   for the emulated interpreter, AND separately by downloading the
+   **official native linux-arm64 Bazel 8.0.0 release** directly from GitHub
+   and using that instead - sidesteps the JVM/qemu problem entirely, this
+   is the one to keep using.
+4. `MODULE.bazel` (symlinked at the workspace root from
+   `build/kernel/kleaf/bzlmod/bazel.MODULE.bazel`) declares `bazel_dep(name
+   = "gbl", dev_dependency = True)` with no version and no override -
+   errors immediately as root module. Fixed with a hand-written stub module
+   (`external/stub-gbl/{MODULE.bazel,BUILD.bazel}`, just
+   `module(name="gbl", version="0.0.0")`) via
+   `--override_module=gbl=external/stub-gbl`.
+5. Cloned all ~17 `local_path_override` targets from
+   `android.googlesource.com/platform/external/...` (~150MB total, cheap).
+   Two needed a non-default branch to actually contain `MODULE.bazel`:
+   `protobuf` needed `main-kernel` (its default `main` branch is the plain
+   Android.bp/Soong variant with no bzlmod support at all); `zlib` needed
+   **none of** `main-kernel`, `main-kernel-2025`, `main-kernel-2026`, or
+   `main-kernel-build-2024` - none of the branches tried have `MODULE.bazel`
+   anywhere in the tree. Bazel wants `zlib` `1.3.1.bcr.5` specifically (the
+   `.bcr.N` suffix is a Bazel Central Registry patch revision), which may
+   mean the real answer is pulling the BCR module folder itself rather than
+   an AOSP mirror branch - not yet resolved.
+
+**Decision: stopping here, not continuing further tonight.** Reasons:
+- This is Bazel workspace archaeology, not Halium work - every fix so far
+  (JVM/qemu, gbl stub, protobuf/zlib branch hunting) has been pure
+  yak-shaving with the actual kernel source (`msm-kernel`) not even cloned
+  yet. No sign the chain ends soon; NDK/Rust-toolchain prebuilts and the
+  msm-kernel sibling repo are still ahead and could each be another
+  multi-step investigation.
+- It's the same class of risk as the manifest-sync disk-fill incident, via
+  a different door - open-ended, un-scoped cloning against an unfamiliar
+  build system, at 1am, unsupervised.
+- More importantly: **it's very likely unnecessary**. Real Halium ports
+  bridge libhybris to the device's already-built, already-tested stock/OEM
+  kernel + vendor blobs - they do not, as standard practice, rebuild the
+  vendor's own Android kernel from source via Google's exact Bazel
+  toolchain. LineageOS itself already produces working, community-tested
+  RP6 builds (official device, active wiki). hybris-boot's job is to
+  package a custom initramfs/init *around* an existing kernel Image; a
+  full from-source recompile is only actually required if we need to
+  change kernel-level config (which, for an Android-derived GKI kernel,
+  we mostly don't - binder/binderfs/seccomp/cgroups/namespaces are already
+  on by default in any real Android kernel, unlike `RetroidPocket/linux`
+  where we just had to add them by hand, see below).
+
+**Recommended next step for RP6, when picked back up:** look for a
+LineageOS-published RP6 build artifact (recovery/OTA package containing a
+`boot.img`) to pull the already-built kernel Image + DTB + vendor modules
+from directly, instead of reproducing the from-source Bazel build. That's
+the same shape of shortcut that made Mini V2's milestone cheap, applied to
+RP6. Only fall back to the full from-source Bazel path if no such artifact
+exists or turns out to be unusable.
+
+**What's been kept on disk** (`libhybris/src/kernel-ayn-qcs8550/`, ~4.3GB,
+cheap to keep): the kernel/modules/devicetree source, `build/kernel`,
+prebuilt Clang (`lineage-20.0` branch, r416183b - **note this doesn't match
+`build.config.constants`'s `CLANG_VERSION=r450784e`, wrong toolchain
+version, would need re-fetching if the Bazel path is resumed**),
+`kernel-build-tools`, the native arm64 Bazel binary, and the ~150MB of
+cloned `external/` bzlmod deps. None of this is wasted if resumed, but none
+of it blocks anything else either.
+
+## 2026-07-24: Mini V2 Halium kernel config — Kconfig fragment applied, verified
+
+User supplied a specific list of Kconfig options needed for the Halium
+libhybris bridge (namespaces/cgroups/seccomp for container isolation,
+Android binder/binderfs for the HAL IPC bridge, overlayfs/squashfs/zstd for
+a vendor-image rootfs strategy, btrfs to match armada's own filesystem
+choice). Applied to the already-working `RetroidPocket/linux` build:
+
+- Fragment saved at `libhybris/configs/halium-common.config`; merged via
+  `scripts/kconfig/merge_config.sh -m .config <fragment>` then `make
+  ARCH=arm64 olddefconfig`, same discipline as armada's own kernel config
+  tooling uses to avoid silent dependency-driven demotion.
+- **`CONFIG_ASHMEM` does not exist in this tree at all** - it's an
+  AOSP/Android-common-kernel-only driver, never part of mainline Linux
+  (superseded upstream by `memfd_create`). `RetroidPocket/linux` is a
+  mainline-derived tree, so there's nothing to enable. If libhybris/the
+  vendor blobs genuinely need ashmem (older HALs sometimes do), it would
+  have to be backported from an AOSP common-kernel fork - not attempted,
+  flagging for whoever picks up the actual libhybris bring-up.
+- `CONFIG_ANDROID_BINDER_IPC`/`CONFIG_ANDROID_BINDERFS` - mainline has had
+  these for years, just weren't on; now `=y`. Default
+  `CONFIG_ANDROID_BINDER_DEVICES="binder,hwbinder,vndbinder"` already
+  includes `hwbinder`, which is what HIDL HAL calls (the libhybris-relevant
+  one) actually need.
+- `CONFIG_DM_CRYPT` requested `=y`, landed as `=m` after `olddefconfig` -
+  it `depends on BLK_DEV_DM` which is itself `=m` here, and Kconfig won't
+  let a bool depend on a module. Loadable dm-crypt is fine for our purposes
+  (no known need for it before `/` is mounted).
+- `CONFIG_BTRFS_FS_CHECK_INTEGRITY` requested `=n` - already satisfied,
+  the symbol doesn't exist in this kernel's `fs/btrfs/Kconfig` at all
+  (removed upstream).
+- Everything else applied exactly as requested with no surprises.
+- Rebuilt `arch/arm64/boot/Image` clean with the new config
+  (`file`-verified valid ARM64 boot Image, 47.5MB). Merged `.config` saved
+  at `libhybris/configs/mini-v2.config.applied` for reference.
+
+## 2026-07-24: hybris-boot itself — checked, it's not the next mechanical step
+
+Cloned `Halium/hybris-boot` (`libhybris/src/hybris-boot/`, active fork,
+last pushed 2026-07-17) to see what actually turns our built kernel Image
+into a bootable hybris ramdisk. Its own `Makefile` prints a literal warning
+on every invocation: *"You are using the non-android-build approach /
+Please don't do this / Setup an android build chroot and build your img
+files there."* Its standalone device targets (`mako`, `grouper`, `tilapia`,
+`aries`...) are 2012-2013-era Nexus/Galaxy devices - this repo is legacy
+tooling kept around for old Mer/SailfishOS-style ports, not the path a
+modern GKI device like ours would actually use. The real, intended flow is
+`mka hybris-boot hybris-recovery` run *inside* a full Android/LineageOS
+device build tree, where it picks up the kernel + a `BOARD_KERNEL_CMDLINE`
+etc. from that build's own config.
+
+This means the actual next milestone isn't "run hybris-boot's Makefile
+against our Image" - it's a real strategic question that needs a decision,
+not just more digging:
+
+- **Mini V2 has no official Android/LineageOS build at all** (there's no
+  stock Android for this device family in the Halium sense - `RetroidPocket/
+  linux` is a from-scratch mainline-ish kernel, not an AOSP kernel tree).
+  Getting real Adreno 650 vendor HAL blobs therefore means **borrowing them
+  from a donor device** - some other SM8250 (Snapdragon 865) phone with a
+  LineageOS/stock Android build, GKI-ABI- and DTB-compatible enough for the
+  blobs to load. Picking that donor device is a real decision, not
+  mechanical work - it determines almost everything downstream (which
+  vendor partition, which kernel ABI to target, how much of our own DTS
+  work carries over).
+- **RP6 has an official LineageOS build** (see above), which is the more
+  promising path precisely because a real `mka hybris-boot` flow already
+  exists for it upstream - once (if) the from-source kernel question is
+  resolved via a prebuilt LineageOS boot.img instead of our own from-source
+  Bazel rebuild.
+
+Recommending this gets a real conversation with the user before more
+autonomous digging - "which donor device for Mini V2's vendor blobs" and
+"do we lean into RP6-via-LineageOS-prebuilts instead of Mini V2 first" are
+project-direction calls, not something to guess at overnight.
     (`android_kernel_ayn_qcs8550-modules`: audio-kernel, camera-kernel,
     securemsm-kernel, eva-kernel, graphics-kernel, bt-kernel) rather than a
     monolithic vendor kernel - a notably Halium/libhybris-friendly shape,
