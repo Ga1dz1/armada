@@ -575,6 +575,129 @@ unpacking) actually works:
   everything else now blocks on writing the actual init logic (needs
   real hardware iteration, not more guessing) and having the initramfs
   itself.
+
+## 2026-07-24: actually ran systemd-nspawn against the real Android /init locally - major finding
+
+Realized "needs real hardware" wasn't fully true - this build host is
+itself native aarch64, so the *container mechanism itself* (not the actual
+HAL/GPU functionality, which genuinely does need real RP6 hardware) is
+testable right here. Tried it rather than continuing to assume it needed
+hardware:
+
+- First attempt (`systemd-nspawn --directory=<assembled-tree> /init`)
+  failed immediately: *"Directory ... doesn't look like it has an OS tree
+  (/usr/ directory is missing). Refusing."* - nspawn does a hard sanity
+  check for `/usr/` before it'll boot anything, and Android's rootfs has
+  no `/usr` at all (`/system` is Android's equivalent). Not documented in
+  `man systemd-nspawn` in an obviously-searchable way, found by hitting it
+  directly.
+- The assembled tree is mounted read-only by design
+  (`assemble-android-guest.sh` uses `loop,ro`), so couldn't just `mkdir
+  usr` on it directly. Set up a temporary overlayfs (tmpfs upper +
+  read-only assembled tree as lower) purely for this test, created an
+  empty `usr/` in the writable upper layer, retried.
+- **Android's real `/init` actually started.** Got past nspawn's OS-tree
+  check and began executing. It then hit something fatal fast (almost
+  certainly: this build host's kernel has none of the
+  binder/ashmem/`androidboot.*`-cmdline/SELinux-policy support the real
+  RP6 kernel has - expected, this is a generic Ubuntu build host, not
+  RP6's actual 5.15.208 kernel) and **called `reboot()`**, which
+  `systemd-nspawn` correctly interpreted as a container reboot request -
+  confirmed by watching it loop ("Container ... is being rebooted." over
+  and over until the 15s timeout killed it).
+- **This is genuinely significant, verified evidence**: the
+  nspawn+Android-`/init` mechanism itself is sound at the process/
+  namespace level - a real, unmodified Android init binary runs under
+  nspawn, and its syscalls (specifically `reboot()`) propagate through
+  nspawn's container lifecycle handling correctly. The empty-`usr`-dir
+  workaround is now a confirmed, necessary, and sufficient fix for
+  `android-guest.nspawn`, not a guess.
+- Everything was cleaned up afterward: killed by `timeout 15` (nothing
+  left running, `machinectl list` confirmed empty), all loop/overlay
+  mounts unmounted, temp directories removed (needed `sudo rm` for a
+  couple of root-owned files nspawn's overlay upper layer created -
+  `system/etc/localtime`, `system/etc/resolv.conf`, `var/log/journal`).
+  No writes ever touched the real source `.img` files (read-only
+  throughout) or anything outside job-scoped temp directories.
+
+**Updated `android-guest.nspawn`** with the confirmed `usr/` workaround
+requirement (see file - needs to be created by whatever prep step calls
+`assemble-android-guest.sh`, e.g. `mkdir -p "$ROOT/usr"` right after
+assembly, since the real deployment won't have the read-only-mount
+complication this local test hit - the real halium-system-side rootfs
+this all lives inside is meant to be writable per the earlier btrfs
+storage decision).
+
+**What's still genuinely unverified and needs real RP6 hardware**:
+whether `/init` gets further than "immediately reboot" once the real
+qcs8550 kernel, real `androidboot.*` cmdline, and real binder/ashmem
+support are present - that can't be simulated here. But the container
+*mechanism* itself is no longer a guess.
+
+Also found and fixed a real bug in `assemble-android-guest.sh` while
+testing this: the first version wrapped the *entire* pre-mounted tree
+(system.img + vendor/odm/system_ext/vendor_dlkm already mounted inside
+it) in one overlayfs to add a writable `usr/` - but **overlayfs does not
+see into submounts that already exist inside its lowerdir** (it looks up
+the lowerdir's raw underlying directory entries directly, bypassing
+whatever's mounted on top of them - a real, easy-to-hit overlayfs
+gotcha, not documented anywhere obvious). Result:
+`vendor/lib64/libEGL_adreno.so` was unreachable through the overlay even
+though the submount itself was fine. Fixed by re-ordering: build the
+overlay from `system.img` *alone* first (gets a writable `usr/`), then
+mount vendor/odm/system_ext/vendor_dlkm directly onto the overlay's own
+merged result afterward - mounting onto an already-established overlay's
+merged view works completely normally, it's specifically pre-existing
+mounts *inside a lowerdir* that break. Re-verified end to end after the
+fix: all five images reachable, `/init` still starts under nspawn
+correctly. Script and file header comments updated to explain why the
+ordering matters, so this doesn't get "simplified" back into the broken
+version later.
+
+## 2026-07-24: hit a real complexity wall on early-boot networking - reframed the MVP scope instead of guessing
+
+The user's plan is: I build something flashable, they flash it, and *then*
+SSH becomes available for further live iteration - so the immediate goal
+became "get a custom boot.img with SSH reachable," not the full
+Halium/Android-guest stack. Started down that path and hit a genuine wall:
+
+- Considered WiFi bring-up in a custom early initramfs - needs
+  `wpa_supplicant` (not in busybox) and the user's actual WiFi
+  credentials, which isn't something to ask for/handle in this kind of
+  session, and adds real complexity (firmware loading timing, associating
+  correctly) with no way to verify without hardware.
+- Considered USB gadget networking (CDC-ECM/RNDIS over the same cable
+  already used for fastboot) as a credential-free alternative - checked
+  what this exact vendor image actually uses, via its real
+  `etc/init/hw/init.qcom.usb.rc`. **It's Qualcomm's own downstream GSI
+  gadget stack** (`gsi.rndis`, `rndis_bam.rndis`, ConfigFS functions named
+  `ffs.*`/`gsi.*`/`rmnet_bam.*` etc.), not the standard mainline
+  `usb_f_rndis`/`usb_f_ecm` ConfigFS functions. Hand-rolling this
+  correctly, blind, with no hardware to verify against, is a real risk of
+  shipping something silently broken and burning one of the user's
+  hardware-access-gated flash/test cycles for nothing.
+
+**Reframed instead of pushing through blind**: the initramfs's job
+doesn't have to include bringing up networking at all. Its actual job is
+narrower - mount/find `halium-system` (the real target OS, on the
+already-decided btrfs subvolume/file storage) and `switch_root` into it.
+Once that handoff succeeds, a normal systemd-based OS takes over as PID 1
+- and armada *already has fully working WiFi/SSH on this exact hardware*
+(RP6 support predates this whole Halium effort, per
+`rp6_boot_architecture.md`). So for the MVP, `halium-system` can just be
+armada's own existing rootfs (or a minimal chroot of it) rather than
+something new - only the front end (kernel + initramfs + reaching
+`switch_root`) is genuinely new and needs verifying; the far end
+(networking, SSH, a working userspace) is already solved, reused as-is.
+The Android-guest/nspawn/HAL-bridging work becomes a systemd service that
+starts *after* the OS is already up and reachable, not a boot-blocking
+prerequisite - failures there become debuggable over SSH instead of
+silent black-box boot failures.
+
+This avoids the USB-gadget/WiFi-credential wall entirely for the MVP
+milestone, without guessing at either. Not yet built - this is the
+corrected plan, next actual step is writing the (now much simpler) init
+script against it.
     (`android_kernel_ayn_qcs8550-modules`: audio-kernel, camera-kernel,
     securemsm-kernel, eva-kernel, graphics-kernel, bt-kernel) rather than a
     monolithic vendor kernel - a notably Halium/libhybris-friendly shape,

@@ -13,11 +13,26 @@
 # - NOT a single image, Android's own boot process expects this layered
 # structure).
 #
-# NOT YET TESTED ON REAL HARDWARE. Device node list below was pulled by
-# grepping this exact build's own vendor init/ueventd configs (not
-# guessed from general Qualcomm knowledge) - see SCOPING.md for how. May
-# still be incomplete; verify against dmesg/logcat on first real boot
-# attempt and extend as needed.
+# Device node list below was pulled by grepping this exact build's own
+# vendor init/ueventd configs (not guessed from general Qualcomm
+# knowledge) - see SCOPING.md for how. May still be incomplete; verify
+# against dmesg/logcat on first real boot attempt and extend as needed.
+#
+# CONFIRMED LOCALLY (2026-07-24, see SCOPING.md): nspawn refuses to boot
+# any tree without a top-level /usr/ directory ("doesn't look like it has
+# an OS tree") - Android's rootfs has no /usr at all. The assembled tree
+# needs an empty usr/ directory created before nspawn runs, e.g.
+# `mkdir -p "$ASSEMBLED_ROOT/usr"` right after
+# assemble-android-guest.sh. With that in place, Android's real /init
+# does start under nspawn (verified locally against a generic build-host
+# kernel - it got as far as calling reboot() almost immediately, which
+# nspawn correctly handled as a container reboot; getting further than
+# that needs the real RP6 kernel/cmdline/binder support, not testable
+# off-device).
+#
+# STILL NOT TESTED ON REAL HARDWARE past that point - getting further
+# than "/init starts and doesn't instantly reboot" needs actual RP6
+# hardware with the matching kernel.
 
 [Exec]
 # Run Android's own /init directly as the container's PID 1 - do NOT use
