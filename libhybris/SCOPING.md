@@ -269,3 +269,28 @@ start the Mini V2 DTS diff. RP6's Bazel/Kleaf path (repo sync in
 progress) is the slower, more complex of the two - Mini V2 may end up
 being the faster path to an actual libhybris milestone despite starting
 the RP6 side first.
+
+## Incident, same session: full LineageOS repo sync filled the disk
+
+Ran `repo init -u https://github.com/LineageOS/android.git -b lineage-23.2`
++ `repo sync` for RP6 to reliably resolve the Bazel/Kleaf workspace layout
+(after two hand-reconstruction mistakes above). It pulled 84GB (`.repo`
+alone) before disk space hit 8.6GB free / 97% used and had to be killed
+and deleted as an emergency measure - the full default manifest pulls in
+the *entire* AOSP platform tree (frameworks, packages, art, bionic,
+thousands of repos), almost none of which is needed just to validate a
+kernel builds. Same mistake as trying to "just repo sync" without
+scoping - don't repeat it.
+
+**Corrected approach, matching what actually worked for Mini V2**:
+don't `repo sync` a full manifest for a kernel-only goal. Instead,
+individually clone just what Kleaf actually needs, using the specific
+paths/repos already identified: `android_kernel_ayn_qcs8550` +
+`-devicetrees` + `-modules` + `-common-modules` (already have these,
+`kernel-ayn-qcs8550/kernel/ayn/`), plus `build/kernel` (Google's Kleaf
+tooling, `android.googlesource.com/kernel/build`) and the specific pinned
+Clang (`LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b`
+on GitHub, per the manifest snippet) and `kernel/prebuilts/build-tools`
+(googlesource, `main-kernel-2025` revision) - fetched directly, not via
+`repo`. More manual assembly, but bounded and disk-safe, unlike a full
+manifest sync.
