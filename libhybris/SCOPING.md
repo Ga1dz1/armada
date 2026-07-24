@@ -219,3 +219,28 @@ Three real options, not yet chosen (needs a decision, not more research):
 
 Not decided yet - flagged to the user rather than picked unilaterally,
 since it's a host/environment setup choice, not a code decision.
+
+**Correction, same session**: the "current (Linux 6.18) beats stale
+(Linux 5.15)" reasoning above was wrong. Checked the ONLY authoritative
+source - `android_device_ayn_qcs8550-common`'s own current
+`lineage.dependencies` and `BoardConfigCommon.mk`
+(`TARGET_KERNEL_SOURCE := kernel/ayn/qcs8550`) - and the device tree that
+`breakfast RP6` actually uses references the **non-`-ack` family**:
+`android_kernel_ayn_qcs8550` (Linux 5.15.208, the one deleted earlier in
+this same session as "stale" - it wasn't), `-qcs8550-devicetrees`,
+`-qcs8550-modules`, `-common-modules`. The `-ack`/`kernel-6.18`/
+`kernel/platform/...` family (`kernel-ack`, `modules-ack`,
+`devicetrees-ack`, `qcs8550-build-ack`) is a **separate, newer effort**
+(possibly a future kernel bump in progress, or a parallel GKI-certification
+build) that isn't what currently ships - re-cloned under
+`kernel-ayn-qcs8550/` as the correct target; the `-ack` clone under
+`kernel-6.18/` is kept as a secondary reference, not deleted, but not the
+primary path. Lesson: a newer kernel version number is not evidence of
+being "the current one" - always verify against the device tree's actual
+`TARGET_KERNEL_SOURCE`/`lineage.dependencies`, not repo naming/dates.
+
+Good news: both trees use the same Bazel/Kleaf build system
+(`android_kernel_ayn_qcs8550` also has `BUILD.bazel` + the full
+`build.config.msm.kalama` etc. set), so the x86_64-toolchain finding and
+the qemu-user-static mitigation above apply either way - no wasted work
+there.
