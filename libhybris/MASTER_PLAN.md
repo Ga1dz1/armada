@@ -778,3 +778,23 @@ properly (Wayland/Vulkan layer JSON paths, etc.), and this only proves
 hardware (GPU driver, DRM/KMS, real display). `mesa`/Turnip (with
 armada's own 3 patches from `armada-packages/mesa/`) is the next piece in
 the same category, not attempted yet this session.
+
+**Mesa checked too, differently from gamescope.** `armada-packages/mesa/`
+isn't a clean upstream-clone-plus-patches recipe like gamescope - it
+starts from a **Fedora Rawhide SRPM** (`mesa-26.1.4-1.fc45`, fetched via
+`koji download-build`) and layers 3 patches onto Fedora's own mesa.spec
+and its own (much larger) Fedora patch set. Replicating that exactly for
+Arch would mean re-deriving Fedora's whole mesa packaging, not just
+armada's 3 patches - not the right move when Arch Linux ARM already
+packages mesa well itself (`26.1.5`, essentially the same upstream
+version). Instead: fetched plain upstream `mesa-26.1.5.tar.xz` (matching
+what Arch's own package builds from) and dry-ran all 3
+`armada-packages/mesa/patches/*.patch` files against it directly -
+**all three apply cleanly** (freedreno-vulkan fix, the A830 chip-id
+addition, the ir3 bindless-UBO-const-lowering disable), only minor line
+offsets from the 26.1.4→26.1.5 version drift, no rejects. Confirms the
+patches are genuinely portable and this is a real, achievable next
+build - **not attempted as a full build this session** (mesa is a much
+larger, slower build than gamescope, and this was already a very long
+session - a real compile deserves its own dedicated run rather than
+being rushed at the tail end of this one).
