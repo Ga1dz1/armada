@@ -842,8 +842,19 @@ def screen_scale():
 
 def base_scale(state):
     if state["screen_link"]:
-        return screen_scale()
-    return state.get("max_brightness", DEFAULT_MAX_BRIGHTNESS)
+        raw = screen_scale()
+    else:
+        raw = state.get("max_brightness", DEFAULT_MAX_BRIGHTNESS)
+    # Pre-compensate for _gamma_correct()'s own curve: write_zone() gamma-
+    # corrects the final r*scale/g*scale/b*scale value, and gamma_correct is
+    # a pure power function, so a linear scale factored in *before* it comes
+    # out the other end raised to LED_GAMMA (confirmed live: screen at 35%
+    # produced ~10% actual PWM duty, not ~35%, matching 0.35**2.2 exactly -
+    # sticks read as visually off well before the screen did). Raising scale
+    # to 1/LED_GAMMA here cancels that out, so the final written brightness
+    # ends up linear in `raw` (screen % or Max Brightness %) like the UI
+    # implies, instead of crushed by an extra unintended gamma pass.
+    return raw ** (1.0 / LED_GAMMA)
 
 
 def _gamma_correct(value):
