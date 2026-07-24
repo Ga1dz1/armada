@@ -398,7 +398,7 @@ class ReactiveInput:
             self.flash = 0.0
 
 
-REACTIVE_DEADZONE = 0.15  # below this magnitude, treat the stick as centered/idle (off)
+REACTIVE_DEADZONE = 0.17  # below this magnitude, treat the stick as centered/idle (off)
 
 
 def stick_reactive_rgb(x, y, floor):
