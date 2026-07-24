@@ -31,20 +31,19 @@ guessed) alongside `reshade`/`vkroots`, same pattern. The stale
 `/usr/local/bin` leftovers from the earlier raw `ninja install` were
 shadowing the new package via PATH order - removed.
 
-### `mesa` is still raw `ninja install`, not a real `pacman` package
+### ~~`mesa` is raw `ninja install`~~ — FIXED
 
-Built and installed directly via `ninja -C build install` inside the
-chroot - works, and the patch set is verified present in the compiled
-output (`ARCHITECTURE.md`/`logs/2026-07-24.md` have the detail). But
-`pacman -Q` doesn't know these files exist, which means a future
-`pacman -Syu` would silently overwrite `mesa`'s install with the stock
-unpatched Arch package again. No dependency tracking, no easy
-uninstall/reinstall, no way to pin a version.
+**Fixed 2026-07-24.** `libhybris/packages/mesa/PKGBUILD` - built with
+`makepkg` on the first try (no bugs this time, unlike gamescope), installed
+via `pacman -U`. Hit one real conflict along the way: leftover files from
+the earlier raw `ninja install` (which also used the `/usr` prefix)
+collided with the new package's own files - `pacman -U` refused until
+those stale files were removed manually. `pacman -Qo
+/usr/lib/libvulkan_freedreno.so` confirms it's now owned by
+`mesa-armada`, not a leftover.
 
-**Fix**: write a real `PKGBUILD` (same approach just proven for
-`gamescope` - `libhybris/packages/gamescope/PKGBUILD` is now the
-reference pattern to follow), build with `makepkg`, install via
-`pacman -U`.
+**Priority B is now fully closed** - both `gamescope` and `mesa`, the two
+components that were raw installs, are real `pacman`-tracked packages.
 
 ⸻
 

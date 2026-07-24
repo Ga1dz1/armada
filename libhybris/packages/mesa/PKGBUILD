@@ -1,0 +1,94 @@
+# Maintainer: CR(g) OS / Atlas OS project
+#
+# Mesa trimmed to freedreno (Turnip)/llvmpipe only, with armada's 3
+# Adreno/RP6 patches. armada's own recipe (armada-packages/mesa/) builds
+# from a Fedora Rawhide SRPM and layers these patches onto Fedora's own
+# mesa.spec/patch set - re-deriving that for Arch would mean re-deriving
+# Fedora's whole mesa packaging (see libhybris/docs/DECISIONS.md and
+# ARCHITECTURE.md). Instead, this PKGBUILD applies just armada's 3
+# patches directly onto plain upstream mesa (matching what Arch's own
+# mesa package builds from), trimmed to only the gallium/Vulkan drivers
+# this project actually needs - the full Arch PKGBUILD builds every GPU
+# vendor's driver, which takes hours and is irrelevant here.
+#
+# Verified 2026-07-24: builds cleanly both manually (meson/ninja,
+# 1664/1664 targets, A830 patch confirmed present in the generated
+# freedreno_devices.h) and as a real makepkg-built, pacman-installed
+# package (pacman -Qo confirms libvulkan_freedreno.so is tracked by
+# this package) - see logs/2026-07-24.md.
+
+pkgname=mesa-armada
+_pkgname=mesa
+pkgver=26.1.5
+pkgrel=1
+pkgdesc="Mesa (Turnip/freedreno + llvmpipe only) with armada's Adreno/RP6 patches"
+arch=(aarch64)
+url="https://gitlab.freedesktop.org/mesa/mesa"
+license=(MIT)
+depends=(
+  expat glibc libdrm libelf libgcc libglvnd libstdc++ libx11 libxcb libxext
+  libxshmfence libxxf86vm llvm-libs lm_sensors spirv-tools wayland zlib
+  zstd libdisplay-info
+)
+makedepends=(
+  clang directx-headers expat libpng libva libxml2 libxrandr
+  xcb-util-keysyms spirv-llvm-translator systemd-libs vulkan-icd-loader
+  cmake elfutils glslang libclc meson python-mako python-packaging
+  python-ply python-pycparser python-yaml wayland-protocols xorgproto
+)
+provides=(mesa mesa-libgl mesa-vulkan-drivers)
+conflicts=(mesa)
+
+source=(
+  "${_pkgname}-${pkgver}.tar.xz::https://mesa.freedesktop.org/archive/mesa-${pkgver}.tar.xz"
+  0001-fix-freedreno-vulkan.patch
+  0002-add-a830-chip-id.patch
+  0003-ir3-disable-bindless-ubo-const-lowering.patch
+)
+sha256sums=('79e421c7ce18cd9e790b8375920325779f10798630bf30e0b22f1a21c8617122'
+            '55314575251bbf1d843f22a9fd952a191956c20254058f64d7372a1d0b23485a'
+            '8929458d699c1b711a33e44e22ca9e6fd28506d5f0b73ad9f16b51568a356fcc'
+            '1fa4a8e418a1822d91d5128c108434681f6d3765c0d056ffaee79b7fe4a9ff62')
+# Checksums generated via `makepkg -g` and the resulting build verified
+# for real, 2026-07-24 - built clean on the first `makepkg` try (no bugs,
+# unlike gamescope-armada's two), installed via `pacman -U` after
+# clearing stale files from the earlier raw `ninja install`.
+# `pacman -Qo /usr/lib/libvulkan_freedreno.so` confirms it's tracked by
+# this package, not a leftover.
+
+prepare() {
+  cd "${_pkgname}-${pkgver}"
+  patch -p1 < "${srcdir}/0001-fix-freedreno-vulkan.patch"
+  patch -p1 < "${srcdir}/0002-add-a830-chip-id.patch"
+  patch -p1 < "${srcdir}/0003-ir3-disable-bindless-ubo-const-lowering.patch"
+}
+
+build() {
+  cd "${_pkgname}-${pkgver}"
+
+  local meson_options=(
+    --optimization 2
+    -D b_ndebug=true
+    -D freedreno-kmds=msm
+    -D gallium-drivers=freedreno,llvmpipe
+    -D gallium-va=disabled
+    -D gallium-mediafoundation=disabled
+    -D video-codecs=
+    -D android-libbacktrace=disabled
+    -D libunwind=disabled
+    -D gallium-extra-hud=true
+    -D gles1=disabled
+    -D valgrind=disabled
+    -D vulkan-drivers=freedreno,swrast
+    -D vulkan-layers=device-select,overlay
+    -D vulkan-manifest-per-architecture=false
+  )
+  arch-meson . build "${meson_options[@]}"
+  meson compile -C build
+}
+
+package() {
+  cd "${_pkgname}-${pkgver}"
+  DESTDIR="${pkgdir}" meson install -C build
+}
+

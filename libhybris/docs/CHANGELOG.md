@@ -8,6 +8,12 @@ newest first.
 
 ## 2026-07-24
 
+- `mesa` turned into a real, tested `pacman` package
+  (`libhybris/packages/mesa/PKGBUILD`) - built clean on the first
+  `makepkg` try, installed via `pacman -U` after clearing stale files
+  left by the earlier raw `ninja install`. `pacman -Qo` confirms
+  `libvulkan_freedreno.so` is tracked. Both components flagged as raw
+  installs (`TECHNICAL_DEBT.md` Priority B) are now real packages.
 - `gamescope` turned into a real, tested `pacman` package
   (`libhybris/packages/gamescope/PKGBUILD`) - built with `makepkg`,
   installed via `pacman -U`, `pacman -Q` confirms tracking. Found and

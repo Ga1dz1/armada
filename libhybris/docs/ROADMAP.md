@@ -15,9 +15,11 @@ Status legend: 🔴 not started · 🟡 in progress · 🟢 mostly done · ✅ d
 **Current milestone:** `Power On → Steam` (PHASE 1 exit criteria)
 
 **Blocking tasks:**
-- Real boot image for RP6 (kernel/DTB/ABL packing against this rootfs - not started)
-- Turning `mesa` from raw `ninja install` into a real `pacman`-tracked package (`gamescope` done - see `libhybris/packages/gamescope/PKGBUILD` as the reference pattern)
-- First real hardware boot test (blocked entirely until the above land - devices are unavailable until there's something to flash)
+- Real boot image for RP6 (kernel/DTB/ABL packing against this rootfs - not started) - **only remaining blocker**
+- First real hardware boot test (blocked until the above lands - devices are unavailable until there's something to flash)
+
+**Resolved:** both `gamescope` and `mesa` are now real, `makepkg`-built,
+`pacman`-tracked packages (`libhybris/packages/{gamescope,mesa}/PKGBUILD`).
 
 **Resolved:** Steam Runtime URL fix - patched and verified end-to-end
 (`build_files/generate-steam-bootstrap.sh`, see `CHANGELOG.md`).
