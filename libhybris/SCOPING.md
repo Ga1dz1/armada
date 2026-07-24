@@ -244,3 +244,28 @@ Good news: both trees use the same Bazel/Kleaf build system
 `build.config.msm.kalama` etc. set), so the x86_64-toolchain finding and
 the qemu-user-static mitigation above apply either way - no wasted work
 there.
+
+## Milestone reached, same session: Mini V2 kernel actually builds
+
+`RetroidPocket/linux` (`sm8250/linux-6.12.y`) turned out to have **no**
+Bazel/Kleaf at all - plain kbuild, unlike both RP6 paths. Installed
+flex/bison/libssl-dev/libelf-dev/bc/dwarves, ran
+`make ARCH=arm64 defconfig && make ARCH=arm64 -j8 Image dtbs` natively
+(this host is aarch64, no cross-compiler or emulation needed) and it
+**built clean**: `arch/arm64/boot/Image` (45.7MB, confirmed
+`file`-valid "Linux kernel ARM64 boot executable Image") plus
+`sm8250-retroidpocket-rpmini.dtb` compiled successfully alongside RP5's.
+
+This proves the toolchain/source/config combination is genuinely sound
+for this device family - a real, verified first milestone, not just a
+paper plan. Remaining gap for Mini V2 *specifically* (vs. the original
+Mini, which this DTB is for): still need the V2 devicetree - per the
+earlier note, likely a small diff from `rpmini.dts` (screen
+masking difference), now something to actually attempt with a working
+build loop to test against, rather than a cold-start unknown.
+
+Next: hybris-boot ramdisk assembly against this working Image, and/or
+start the Mini V2 DTS diff. RP6's Bazel/Kleaf path (repo sync in
+progress) is the slower, more complex of the two - Mini V2 may end up
+being the faster path to an actual libhybris milestone despite starting
+the RP6 side first.
