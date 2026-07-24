@@ -1,0 +1,71 @@
+#!/bin/busybox sh
+# CR(g) OS / Atlas OS - first-boot-test init.
+#
+# Replaces the stock init_boot.img ramdisk. boot.img (kernel) and
+# vendor_boot.img (DTB + vendor .ko modules) are kept exactly as
+# extracted from the real stock RP6 firmware, unmodified - only this
+# ramdisk changes. Job: find the Arch Linux ARM rootfs image (a plain
+# ext4 file living on the real userdata partition, alongside Android's
+# own data - "one system, shared storage," not a separate partition -
+# see ARCHITECTURE.md/DECISIONS.md), loop-mount it, switch_root into it.
+#
+# NOT YET BOOT-TESTED ON REAL HARDWARE - this is a first, carefully
+# reasoned draft, not a proven-working image. See
+# libhybris/docs/logs/2026-07-24.md for exactly what is and isn't
+# verified.
+
+/bin/busybox mount -t proc proc /proc
+/bin/busybox mount -t sysfs sysfs /sys
+/bin/busybox mount -t devtmpfs devtmpfs /dev
+
+echo "atlas-init: starting" > /dev/kmsg 2>/dev/null || true
+
+# mdev handles /dev population (uevents) so by-name symlinks show up.
+echo /bin/mdev > /proc/sys/kernel/hotplug 2>/dev/null || true
+/bin/busybox mdev -s
+
+# Real userdata partition, confirmed from the stock firmware's own
+# rawprogram.xml (label="userdata"), standard Android by-name symlink.
+USERDATA_DEV=""
+for i in 1 2 3 4 5 6 7 8 9 10; do
+	if [ -e /dev/block/by-name/userdata ]; then
+		USERDATA_DEV=/dev/block/by-name/userdata
+		break
+	fi
+	/bin/busybox mdev -s
+	/bin/busybox sleep 0.5
+done
+
+if [ -z "$USERDATA_DEV" ]; then
+	echo "atlas-init: PANIC - /dev/block/by-name/userdata never appeared" > /dev/kmsg
+	exec /bin/busybox sh
+fi
+
+/bin/busybox mount -o rw "$USERDATA_DEV" /mnt/userdata
+if [ $? -ne 0 ]; then
+	echo "atlas-init: PANIC - failed to mount userdata ($USERDATA_DEV)" > /dev/kmsg
+	exec /bin/busybox sh
+fi
+
+ROOTFS_IMG=/mnt/userdata/atlas/rootfs.img
+if [ ! -f "$ROOTFS_IMG" ]; then
+	echo "atlas-init: PANIC - $ROOTFS_IMG not found on userdata" > /dev/kmsg
+	echo "atlas-init: expected the Arch rootfs image pushed there before first boot" > /dev/kmsg
+	exec /bin/busybox sh
+fi
+
+/bin/busybox mount -o loop,rw "$ROOTFS_IMG" /newroot
+if [ $? -ne 0 ]; then
+	echo "atlas-init: PANIC - failed to loop-mount $ROOTFS_IMG" > /dev/kmsg
+	exec /bin/busybox sh
+fi
+
+# Give the new root its own /dev (real device nodes matter for gamescope/
+# mesa/inputplumber - GPU, input, etc.) rather than leaving devtmpfs
+# behind on the old root.
+/bin/busybox mount --move /dev /newroot/dev
+/bin/busybox mount --move /proc /newroot/proc
+/bin/busybox mount --move /sys /newroot/sys
+
+echo "atlas-init: switch_root into $ROOTFS_IMG" > /dev/kmsg
+exec /bin/busybox switch_root /newroot /sbin/init

@@ -8,6 +8,15 @@ newest first.
 
 ## 2026-07-24
 
+- **First real, flashable RP6 boot-image test built and delivered**
+  (`/media/psf/Unreal/CRgOS_boot_test_20260724/`). Stock `boot`/
+  `vendor_boot`/`dtbo` kept unchanged; `init_boot.img`'s ramdisk replaced
+  with a custom busybox-based init that mounts the real `userdata`
+  partition, loop-mounts an Arch rootfs image, and `switch_root`s into
+  it. Packing round-trip verified byte-identical; not yet boot-tested on
+  real hardware. Found and fixed a real consequence of ADR-007 along the
+  way: the real stock kernel has no Btrfs support either, so the whole
+  system uses ext4 for now, not just Android's own data.
 - Mini V2's own official stock firmware received and unpacked (Linux
   4.19.157-perf, built on a genuine Retroid host `RPMiniV2@RPServer`) -
   confirmed real Adreno 650 GPU blobs and Sensors HAL (`sensors.ssc.so`)

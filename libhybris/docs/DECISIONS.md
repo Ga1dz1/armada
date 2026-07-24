@@ -186,6 +186,22 @@ is actually headed" - the kernel choice for PHASE 1's first boot test
 should be the one PHASE 4 actually needs, not the one that's lowest-risk
 in a vacuum.
 
+**Consequence found while building the boot image (2026-07-24, same
+day)**: ADR-007 means the unified-Btrfs storage idea (ADR-004) has a
+bigger problem than "Android's own `/data` can't be Btrfs" - **the real
+stock RP6 kernel doesn't have Btrfs at all** (confirmed via the same
+IKCONFIG-extraction technique, same result as the LineageOS kernel:
+`CONFIG_BTRFS_FS` not set). Since PHASE 1 now commits to booting this
+exact kernel, *nothing* in the system can use Btrfs without the
+already-rejected from-source kernel rebuild - not just Android's `/data`,
+the CR(g) OS side too. `PHASE 1`'s own build list ("Arch Linux ARM +
+systemd + pacman + initramfs + **Btrfs**") is affected. For the first
+real rootfs/boot-image build, using **ext4** instead (matches what the
+real kernel actually supports) - the Btrfs/subvolume idea from
+`ARCHITECTURE.md` needs a real update, not a silent workaround. Flagging
+this now rather than quietly picking ext4 without saying why the original
+plan changed.
+
 ⸻
 
 ### ADR-006: Android is a thin bridge to proprietary hardware, not a second userspace
