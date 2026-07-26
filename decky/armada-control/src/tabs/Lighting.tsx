@@ -17,7 +17,8 @@ import {
   setStickLedMaxBrightness as applyStickLedMaxBrightness,
   setStickLedSeesaw as applyStickLedSeesaw,
 } from "../backend";
-import { SelectEdit, SliderEdit, ToggleRow } from "../components/widgets";
+import { ColorPicker } from "../components/ColorPicker";
+import { PresetSwatchGrid, SelectEdit, SliderEdit, ToggleRow } from "../components/widgets";
 import type { Config, StickLedSideState, StickLedState } from "../types";
 
 const PRESET_COLORS: { label: string; value: string }[] = [
@@ -32,17 +33,7 @@ const PRESET_COLORS: { label: string; value: string }[] = [
   { label: "Yellow", value: "FFAA00" },
   { label: "Green", value: "00FF00" },
   { label: "White", value: "FFFFFF" },
-  { label: "Off", value: "000000" },
 ];
-
-function hexToRgb(hex: string): [number, number, number] {
-  const clean = /^[0-9A-Fa-f]{6}$/.test(hex) ? hex : "0050FF";
-  return [parseInt(clean.slice(0, 2), 16), parseInt(clean.slice(2, 4), 16), parseInt(clean.slice(4, 6), 16)];
-}
-function rgbToHex(r: number, g: number, b: number): string {
-  const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
-  return [clamp(r), clamp(g), clamp(b)].map((n) => n.toString(16).padStart(2, "0")).join("").toUpperCase();
-}
 
 function patchSide(stickLed: StickLedState, side: "l" | "r", patch: Partial<StickLedSideState>): StickLedState {
   return { ...stickLed, sides: { ...stickLed.sides, [side]: { ...stickLed.sides[side], ...patch } } };
@@ -231,12 +222,6 @@ export function Lighting({ config, setConfig }: {
       });
     }
   };
-  const setStickLedChannel = (channel: 0 | 1 | 2, value: number) => {
-    if (!sideState) return;
-    const rgb = hexToRgb(sideState.color);
-    rgb[channel] = value;
-    void setStickLedColor(rgbToHex(rgb[0], rgb[1], rgb[2]));
-  };
   const setStickLedFlashColor = async (hex: string) => {
     if (!stickLed) return;
     const previous = stickLed.flashColors[flashButton];
@@ -255,12 +240,6 @@ export function Lighting({ config, setConfig }: {
           : current,
       );
     }
-  };
-  const setFlashChannel = (channel: 0 | 1 | 2, value: number) => {
-    if (!stickLed) return;
-    const rgb = hexToRgb(stickLed.flashColors[flashButton] ?? DEFAULT_FLASH_COLOR);
-    rgb[channel] = value;
-    void setStickLedFlashColor(rgbToHex(rgb[0], rgb[1], rgb[2]));
   };
   const setStickLedParam = async (param: string, backendValue: number) => {
     if (!stickLed || !sideState) return;
@@ -310,12 +289,6 @@ export function Lighting({ config, setConfig }: {
         return { ...current, stickLed: sl };
       });
     }
-  };
-  const setDuotoneChannel = (slot: "a" | "b", channel: 0 | 1 | 2, value: number) => {
-    if (!sideState) return;
-    const rgb = hexToRgb(slot === "a" ? sideState.duotoneColorA : sideState.duotoneColorB);
-    rgb[channel] = value;
-    void setStickLedDuotoneColor(slot, rgbToHex(rgb[0], rgb[1], rgb[2]));
   };
   const setStickLedDuotoneOrientation = async (orientation: string) => {
     if (!stickLed || !sideState) return;
@@ -525,41 +498,12 @@ export function Lighting({ config, setConfig }: {
               )}
               {sideState.colorSource !== "battery" && sideState.colorSource !== "random" && (
                 <>
-                  {PRESET_COLORS.map((preset) => (
-                    <ButtonItem key={preset.value} layout="below" onClick={() => setStickLedColor(preset.value)}>
-                      {preset.label}
-                    </ButtonItem>
-                  ))}
+                  <PresetSwatchGrid colors={PRESET_COLORS} selected={sideState.color} onSelect={setStickLedColor} />
                   <ButtonItem layout="below" onClick={() => setCustomColorExpanded((expanded) => !expanded)}>
                     {customColorExpanded ? "Hide custom color ▲" : "Custom color (advanced) ▼"}
                   </ButtonItem>
                   {customColorExpanded && (
-                    <>
-                      <SliderEdit
-                        label="Red"
-                        value={hexToRgb(sideState.color)[0]}
-                        min={0}
-                        max={255}
-                        step={1}
-                        onChange={(value) => setStickLedChannel(0, value)}
-                      />
-                      <SliderEdit
-                        label="Green"
-                        value={hexToRgb(sideState.color)[1]}
-                        min={0}
-                        max={255}
-                        step={1}
-                        onChange={(value) => setStickLedChannel(1, value)}
-                      />
-                      <SliderEdit
-                        label="Blue"
-                        value={hexToRgb(sideState.color)[2]}
-                        min={0}
-                        max={255}
-                        step={1}
-                        onChange={(value) => setStickLedChannel(2, value)}
-                      />
-                    </>
+                    <ColorPicker hex={sideState.color} onChange={setStickLedColor} />
                   )}
                 </>
               )}
@@ -575,34 +519,14 @@ export function Lighting({ config, setConfig }: {
           {flashExpanded && (
             <>
               <SelectEdit label="Button" value={flashButton} options={FLASH_BUTTON_OPTIONS} onChange={setFlashButton} />
-              {PRESET_COLORS.map((preset) => (
-                <ButtonItem key={preset.value} layout="below" onClick={() => setStickLedFlashColor(preset.value)}>
-                  {preset.label}
-                </ButtonItem>
-              ))}
-              <SliderEdit
-                label="Red"
-                value={hexToRgb(stickLed.flashColors[flashButton] ?? DEFAULT_FLASH_COLOR)[0]}
-                min={0}
-                max={255}
-                step={1}
-                onChange={(value) => setFlashChannel(0, value)}
+              <PresetSwatchGrid
+                colors={PRESET_COLORS}
+                selected={stickLed.flashColors[flashButton] ?? DEFAULT_FLASH_COLOR}
+                onSelect={setStickLedFlashColor}
               />
-              <SliderEdit
-                label="Green"
-                value={hexToRgb(stickLed.flashColors[flashButton] ?? DEFAULT_FLASH_COLOR)[1]}
-                min={0}
-                max={255}
-                step={1}
-                onChange={(value) => setFlashChannel(1, value)}
-              />
-              <SliderEdit
-                label="Blue"
-                value={hexToRgb(stickLed.flashColors[flashButton] ?? DEFAULT_FLASH_COLOR)[2]}
-                min={0}
-                max={255}
-                step={1}
-                onChange={(value) => setFlashChannel(2, value)}
+              <ColorPicker
+                hex={stickLed.flashColors[flashButton] ?? DEFAULT_FLASH_COLOR}
+                onChange={setStickLedFlashColor}
               />
             </>
           )}
@@ -616,55 +540,15 @@ export function Lighting({ config, setConfig }: {
             options={DUOTONE_ORIENTATION_OPTIONS}
             onChange={setStickLedDuotoneOrientation}
           />
-          <Field label="Color A" />
-          <SliderEdit
-            label="A: Red"
-            value={hexToRgb(sideState.duotoneColorA)[0]}
-            min={0}
-            max={255}
-            step={1}
-            onChange={(value) => setDuotoneChannel("a", 0, value)}
+          <ColorPicker
+            label="Color A"
+            hex={sideState.duotoneColorA}
+            onChange={(hex) => setStickLedDuotoneColor("a", hex)}
           />
-          <SliderEdit
-            label="A: Green"
-            value={hexToRgb(sideState.duotoneColorA)[1]}
-            min={0}
-            max={255}
-            step={1}
-            onChange={(value) => setDuotoneChannel("a", 1, value)}
-          />
-          <SliderEdit
-            label="A: Blue"
-            value={hexToRgb(sideState.duotoneColorA)[2]}
-            min={0}
-            max={255}
-            step={1}
-            onChange={(value) => setDuotoneChannel("a", 2, value)}
-          />
-          <Field label="Color B" />
-          <SliderEdit
-            label="B: Red"
-            value={hexToRgb(sideState.duotoneColorB)[0]}
-            min={0}
-            max={255}
-            step={1}
-            onChange={(value) => setDuotoneChannel("b", 0, value)}
-          />
-          <SliderEdit
-            label="B: Green"
-            value={hexToRgb(sideState.duotoneColorB)[1]}
-            min={0}
-            max={255}
-            step={1}
-            onChange={(value) => setDuotoneChannel("b", 1, value)}
-          />
-          <SliderEdit
-            label="B: Blue"
-            value={hexToRgb(sideState.duotoneColorB)[2]}
-            min={0}
-            max={255}
-            step={1}
-            onChange={(value) => setDuotoneChannel("b", 2, value)}
+          <ColorPicker
+            label="Color B"
+            hex={sideState.duotoneColorB}
+            onChange={(hex) => setStickLedDuotoneColor("b", hex)}
           />
         </>
       )}

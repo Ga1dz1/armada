@@ -1,4 +1,4 @@
-import { Dropdown, DropdownItemInternal, Field, PanelSection, PanelSectionRow, SliderField, ToggleField } from "@decky/ui";
+import { Dropdown, DropdownItemInternal, Field, Focusable, PanelSection, PanelSectionRow, SliderField, ToggleField } from "@decky/ui";
 import type { ReactNode } from "react";
 import type { DropdownChoice } from "../types";
 
@@ -38,6 +38,39 @@ export function ToggleRow({ label, value, onChange, disabled, description }: {
   return (
     <PanelSectionRow>
       <ToggleField label={label} description={description} checked={!!value} disabled={disabled} onChange={onChange} />
+    </PanelSectionRow>
+  );
+}
+
+// A compact, wrapping grid of tappable color swatches - replaces a long
+// column of full-width preset buttons (one per color, "Blue"/"Cyan"/...)
+// that took ten rows to scroll through. flow-children="row" keeps gamepad
+// D-pad navigation moving sensibly across the grid instead of only up/down
+// through what used to be a single column of buttons.
+export function PresetSwatchGrid({ colors, selected, onSelect }: {
+  colors: { label: string; value: string }[];
+  selected?: string;
+  onSelect: (hex: string) => void;
+}) {
+  return (
+    <PanelSectionRow>
+      <Focusable style={{ display: "flex", flexWrap: "wrap", gap: 8 }} flow-children="row">
+        {colors.map((color) => (
+          <Focusable
+            key={color.value}
+            className="armada-preset-swatch"
+            style={{
+              backgroundColor: `#${color.value}`,
+              outline: selected === color.value ? "2px solid white" : undefined,
+            }}
+            title={color.label}
+            onActivate={() => onSelect(color.value)}
+            onClick={() => onSelect(color.value)}
+          >
+            {null}
+          </Focusable>
+        ))}
+      </Focusable>
     </PanelSectionRow>
   );
 }

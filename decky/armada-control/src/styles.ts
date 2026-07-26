@@ -31,6 +31,84 @@ export const styles = `
       .armada-control-tabs .armada-reset-row {
         padding: 0 14px 8px;
       }
+      .armada-control-tabs .armada-color-preview-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 4px 0;
+      }
+      .armada-control-tabs .armada-color-preview-label {
+        flex: 1 1 auto;
+        opacity: 0.87;
+      }
+      .armada-control-tabs .armada-color-swatch {
+        flex: 0 0 auto;
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+      }
+      .armada-control-tabs .armada-color-preview-hex {
+        flex: 0 0 auto;
+        font-variant-numeric: tabular-nums;
+        opacity: 0.62;
+        font-size: 12px;
+      }
+      .armada-control-tabs .armada-preset-swatch {
+        width: 34px;
+        height: 34px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+        cursor: pointer;
+      }
+      .armada-control-tabs .armada-color-picker {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: center;
+        width: 100%;
+      }
+      .armada-control-tabs .armada-color-sv-wrap,
+      .armada-control-tabs .armada-color-hue-wrap {
+        position: relative;
+      }
+      .armada-control-tabs .armada-color-sv-canvas {
+        display: block;
+        border-radius: 6px;
+        touch-action: none;
+        cursor: crosshair;
+      }
+      .armada-control-tabs .armada-color-hue-canvas {
+        display: block;
+        border-radius: 4px;
+        touch-action: none;
+        cursor: ew-resize;
+      }
+      .armada-control-tabs .armada-color-cursor {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        margin-left: -6px;
+        margin-top: -6px;
+        border-radius: 50%;
+        border: 2px solid white;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 1px 3px rgba(0, 0, 0, 0.5);
+        pointer-events: none;
+      }
+      .armada-control-tabs .armada-color-hue-cursor {
+        position: absolute;
+        top: -2px;
+        width: 4px;
+        height: calc(100% + 4px);
+        margin-left: -2px;
+        border-radius: 2px;
+        background: white;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+        pointer-events: none;
+      }
       .armada-control-tabs .armada-compat-note {
         box-sizing: border-box;
         width: 100%;
