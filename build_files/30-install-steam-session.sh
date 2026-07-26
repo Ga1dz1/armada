@@ -105,7 +105,7 @@ STEAM_HOME="${STEAM_BOOTSTRAP_HOME}/.local/share/Steam"
 STEAM_BOOTSTRAP_HOME="${STEAM_BOOTSTRAP_HOME}" bash /ctx/build_files/generate-steam-bootstrap.sh
 rm -f /etc/steamos-oobe-image
 
-PROTON_VER="11.0-20260702-slr"
+PROTON_VER="11.0-20260703-slr"
 PROTON_ARCHIVE_NAME="proton-cachyos-${PROTON_VER}-arm64"
 # Keep this in sync with armada-fixups when changing Proton major/minor lines.
 PROTON_TOOL_NAME="proton-cachyos-11.0-arm64"
