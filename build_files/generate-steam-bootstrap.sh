@@ -81,7 +81,12 @@ for name in names:
     os.chmod(path, mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 PY
 
-curl -fsSL -o /tmp/steam-runtime-steamrt-arm64.tar.xz "${STEAM_ARM_RUNTIME_URL}"
+# The bare latest-public-beta alias 403s on an actual GET (confirmed: a HEAD
+# against it resolves the redirect fine, a full curl -fsSL GET against the
+# same alias does not - Valve's edge treats them differently). Resolve the
+# real dated path via a HEAD first, then fetch that directly.
+steam_arm_runtime_resolved=$(curl -sI -L -o /dev/null -w '%{url_effective}' "${STEAM_ARM_RUNTIME_URL}")
+curl -fsSL -o /tmp/steam-runtime-steamrt-arm64.tar.xz "${steam_arm_runtime_resolved}"
 tar -xJf /tmp/steam-runtime-steamrt-arm64.tar.xz -C "${STEAM}"
 rm -f /tmp/steam-runtime-steamrt-arm64.tar.xz
 
