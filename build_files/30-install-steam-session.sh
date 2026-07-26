@@ -140,4 +140,57 @@ python3 -c 'import os,sys; os.setxattr(sys.argv[1],"user.component",b"steam")' "
 python3 -c 'import os,sys; os.setxattr(sys.argv[1],"user.component",b"proton")' "${PROTON_DIR}/${PROTON_TOOL_NAME}"
 python3 -c 'import os,sys; os.setxattr(sys.argv[1],"user.component",b"fex-rootfs")' /usr/share/fex-emu/RootFS
 
+
+# Official Valve ARM64 Proton (app 4628740, "Proton 11.0 (ARM64)") - a genuine
+# native-aarch64 build (confirmed via `file` on every wine/wine64 binary: ELF
+# ARM aarch64, not x86_64-under-FEX like the regular "Proton 11.0" app
+# 4628710 Steam also lists). armada's launch-steam already auto-detects and
+# registers this exact app as a per-game compat tool option the moment its
+# StateFlags shows fully-installed (bit 4) - it only needs the depot content
+# pre-staged here so a fresh install has it from first boot, same as the
+# Steam client and CachyOS Proton above, instead of requiring every user to
+# manually find and install it from their own Steam library first.
+#
+# UNVERIFIED as of this commit - could not be exercised end-to-end in the
+# sandbox this was written in (no FEX/x86 emulation available there at all,
+# and no existing direct-FEXInterpreter invocation anywhere in this codebase
+# to confirm the exact call convention against). Specifically unconfirmed:
+#   - Whether steamcmd's anonymous account actually has license to pull this
+#     app/depot (Proton apps are normally free tools, but not verified here).
+#   - Whether FEXInterpreter (from the fex-emu package already installed
+#     above) is the right way to run steamcmd's x86 binary in this exact
+#     build context, or whether it needs FEXBash / a RootFS mount tweak.
+#   - Whether SteamCMD's own self-update re-exec (linux32/steamcmd bootstraps
+#     itself to a newer binary on first run) round-trips through FEX cleanly.
+# Needs a real build-machine test (this repo's own CI, or any ARM64 host
+# with FEX already set up) before shipping - if it fails, the pre-stage
+# simply won't exist and launch-steam's own detection silently no-ops,
+# same as today's manual-install-required behavior, so failure here is
+# not expected to break anything else in the build.
+PROTON_ARM64_APPID="4628740"
+PROTON_ARM64_DIR="${STEAM_HOME}/steamapps/common/Proton 11.0 (ARM64)"
+STEAMCMD_DIR="/tmp/steamcmd"
+
+set +e
+mkdir -p "${STEAMCMD_DIR}"
+curl --retry 3 --retry-delay 2 -fsSL "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz" \
+    -o "${STEAMCMD_DIR}/steamcmd_linux.tar.gz" \
+    && tar -xzf "${STEAMCMD_DIR}/steamcmd_linux.tar.gz" -C "${STEAMCMD_DIR}" \
+    && FEXInterpreter "${STEAMCMD_DIR}/linux32/steamcmd" \
+        +@sSteamCmdForcePlatformType linux \
+        +force_install_dir "${STEAM_HOME}/steamapps/common/Proton 11.0 (ARM64)" \
+        +login anonymous \
+        +app_update "${PROTON_ARM64_APPID}" validate \
+        +quit
+proton_arm64_rc=$?
+set -e
+rm -rf "${STEAMCMD_DIR}"
+
+if [[ ${proton_arm64_rc} -eq 0 && -d "${PROTON_ARM64_DIR}" ]]; then
+    python3 -c 'import os,sys; os.setxattr(sys.argv[1],"user.component",b"proton-arm64")' "${PROTON_ARM64_DIR}"
+    echo "Pre-staged: official Proton 11.0 (ARM64), app ${PROTON_ARM64_APPID}"
+else
+    echo "WARNING: could not pre-stage official Proton 11.0 (ARM64) (rc=${proton_arm64_rc}) - users can still install it manually from their Steam library, same as before this change" >&2
+fi
+
 echo "Pre-staged: ARM64 Steam bootstrap + CachyOS Proton 11 ${PROTON_VER}"
