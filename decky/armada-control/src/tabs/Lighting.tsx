@@ -18,6 +18,7 @@ import {
   setStickLedSeesaw as applyStickLedSeesaw,
 } from "../backend";
 import { ColorPicker } from "../components/ColorPicker";
+import { ModePreview } from "../components/ModePreview";
 import { PresetSwatchGrid, SelectEdit, SliderEdit, ToggleRow } from "../components/widgets";
 import type { Config, StickLedSideState, StickLedState } from "../types";
 
@@ -434,6 +435,12 @@ export function Lighting({ config, setConfig }: {
         <SelectEdit label="Stick" value={selectedSide} options={SIDE_OPTIONS} onChange={(value) => setSelectedSide(value as "l" | "r")} />
       )}
       <SelectEdit label="Mode" value={mode} options={MODE_OPTIONS} onChange={setStickLedMode} />
+      <ModePreview
+        mode={mode}
+        color={sideState.color}
+        duotoneColorA={sideState.duotoneColorA}
+        duotoneColorB={sideState.duotoneColorB}
+      />
       {mode === "spin" && (
         <ToggleRow
           label="Soft trail"

@@ -56,6 +56,16 @@ export const styles = `
         opacity: 0.62;
         font-size: 12px;
       }
+      .armada-control-tabs .armada-mode-preview-wrap {
+        display: flex;
+        justify-content: center;
+        width: 100%;
+        padding: 4px 0 8px;
+      }
+      .armada-control-tabs .armada-mode-preview-canvas {
+        background: rgba(0, 0, 0, 0.25);
+        border-radius: 8px;
+      }
       .armada-control-tabs .armada-preset-swatch {
         width: 34px;
         height: 34px;
