@@ -88,7 +88,24 @@ FDTDIR=$(sudo sed -n 's/^fdtdir //p' "${entry}")
 shopt -s nullglob
 sm8250_dtbs=("${WORK}/boot${FDTDIR}/qcom/sm8250-retroidpocket-"*.dtb)
 shopt -u nullglob
-[[ -z "${KEEP_GRUB:-}" && "${#sm8250_dtbs[@]}" -gt 0 ]] && KEEP_GRUB=1
+# One shared kernel package bundles DTBs for every armada device, so "does
+# this image contain an SM8250 DTB" is true for every build regardless of
+# which physical device the resulting SD image is actually meant for - that
+# auto-detect alone can't tell arm-efi devices (SM8250: no per-device DTB
+# auto-pick in their ABL, must chainload GRUB) apart from qcom-abl devices
+# (SM8550/8650/8750: RP6, AYN Odin 2/Mini/Portal/Thor, etc. - ABL boots
+# /KERNEL directly and picks the right DTB itself, no GRUB needed or wanted -
+# see BOOT_ARCHITECTURE.md for the live-confirmed failure this caused: an
+# RP6 chainloaded into a GRUB menu with only SM8250 entries, none correct
+# for it). ARMADA_IMAGE_FAMILY explicitly picks which family this build is
+# for (set by the Justfile's build-armada-image-{arm-efi,qcom-abl} targets);
+# KEEP_GRUB, if set by hand, still wins over both for ad-hoc testing.
+case "${ARMADA_IMAGE_FAMILY:-}" in
+    qcom-abl) : ;;  # never keep GRUB for this family, regardless of DTB contents
+    arm-efi) [[ -z "${KEEP_GRUB:-}" ]] && KEEP_GRUB=1 ;;
+    "") [[ -z "${KEEP_GRUB:-}" && "${#sm8250_dtbs[@]}" -gt 0 ]] && KEEP_GRUB=1 ;;  # legacy auto-detect
+    *) echo "ERROR: unknown ARMADA_IMAGE_FAMILY '${ARMADA_IMAGE_FAMILY}' (expected arm-efi or qcom-abl)"; exit 1 ;;
+esac
 
 if [[ -n "${KEEP_GRUB:-}" ]]; then
     # save_env/load_env (used below to remember the last-booted entry) need
