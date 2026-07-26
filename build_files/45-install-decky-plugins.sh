@@ -31,7 +31,13 @@ decky_service_tmp="$(mktemp)"
 curl --retry 3 --retry-delay 2 -fsSL "${decky_service_url}" |
     sed 's#${HOMEBREW_FOLDER}#/var/home/armada/homebrew#g' \
         >"${decky_service_tmp}"
-install -D -m 0644 "${decky_service_tmp}" /etc/systemd/system/plugin_loader.service
+# Ship the unit under /usr/lib/systemd/system (the read-only, versioned OS
+# tree) like every other armada unit, not /etc/systemd/system: a unit *file*
+# living in /etc puts its content through ostree's per-boot /etc 3-way merge
+# on every update, not just the enable-state symlink. Confirmed to go missing
+# after an OTA in practice - the enable symlink alone in /etc is the
+# well-trodden, reliable path the rest of this codebase already uses.
+install -D -m 0644 "${decky_service_tmp}" /usr/lib/systemd/system/plugin_loader.service
 rm -f "${decky_service_tmp}"
 
 systemctl enable armada-decky-sync.service

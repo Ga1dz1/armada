@@ -23,6 +23,27 @@ install -d -m 0755 "${homebrew}/services"
 install -d -m 0755 "${homebrew}/plugins"
 install -d -m 0755 "${homebrew}/settings"
 
+# One-time migration for installs that picked up plugin_loader.service back
+# when it was installed straight into /etc/systemd/system (see git history:
+# "Revert back to using standard decky loader service"). A unit *file* in
+# /etc goes through ostree's per-boot 3-way /etc merge like any other /etc
+# content, unlike the rest of this codebase's units (defined under
+# /usr/lib/systemd/system, only their enable-state symlink lives in /etc) -
+# confirmed to leave Decky permanently gone after an OTA in practice. Once
+# it moved to /usr/lib/systemd/system, the leftover /etc copy shadows it
+# (systemd prefers /etc/systemd/system over /usr/lib/systemd/system for a
+# same-named unit), so it has to be removed, not just left alongside.
+stale_etc_unit=/etc/systemd/system/plugin_loader.service
+if [[ -f "${stale_etc_unit}" && ! -L "${stale_etc_unit}" ]]; then
+    was_active=0
+    systemctl is-active --quiet plugin_loader.service && was_active=1
+    rm -f "${stale_etc_unit}"
+    rm -f /etc/systemd/system/multi-user.target.wants/plugin_loader.service
+    systemctl daemon-reload
+    systemctl enable plugin_loader.service >/dev/null 2>&1 || true
+    [[ "${was_active}" = 1 ]] && systemctl start plugin_loader.service >/dev/null 2>&1 || true
+fi
+
 # Decky owns self-updates; the image copy seeds installs and newer OS-bundled loaders.
 if loader_needs_seed && [[ -x "${loader_src}" ]]; then
     install -Dpm 0755 "${loader_src}" "${homebrew}/services/PluginLoader"
