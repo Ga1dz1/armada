@@ -74,3 +74,21 @@ case "${ARMADA_DEVICE_ID:-}" in
         /usr/libexec/armada/stick-led-color apply || true
         ;;
 esac
+
+# Flip2 only: this board's shared-MCU gamepad has no physical button wired
+# to BTN_BACK, so its InputPlumber capability map (retroid_flip2_qam_chord,
+# see 01-retroid-flip2-controller.yaml) opens Steam's Quick Access Menu via
+# a Guide+A chord instead. The MCU reports Guide (BTN_MODE) as a fixed
+# ~150ms pulse no matter how long it's held, too short a window for the
+# chord matcher to reliably catch - the kernel's home_pulse_stretch_ms
+# param (see 1005-retroid-gamepad-home-pulse-stretch.patch) defers the
+# release edge to widen it. Defaults off (0) for every other device using
+# this same driver (Mini V2, RP5, RP6's own gamepad path), since it changes
+# real Guide-button release timing and has no reason to apply where a
+# physical QAM button already works. 400ms ported from pocknix-os's own
+# figure - like their own implementation, unconfirmed on real Flip2
+# hardware as of this commit.
+if [[ "${ARMADA_DEVICE_ID:-}" == "retroid-pocket-flip2" ]]; then
+    param=/sys/module/retroid/parameters/home_pulse_stretch_ms
+    [[ -w "$param" ]] && echo 400 >"$param"
+fi

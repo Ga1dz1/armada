@@ -72,7 +72,15 @@ source_devices:
     evdev:
       phys_path: retroid-pocket-gamepad/input0
       handler: event*
-    capability_map_id: retroid_mcu
+    # retroid_flip2_qam_chord (not the shared retroid_mcu): this board has
+    # no physical button wired to BTN_BACK, so the plain QuickAccess
+    # mapping every other Retroid device gets has nowhere to land - this
+    # variant adds a Guide+A chord instead. Needs the kernel's
+    # home_pulse_stretch_ms quirk enabled for this device (see
+    # armada-device-quirks) or the chord window is too short to catch
+    # reliably. See retroid_flip2_qam_chord.yaml's own header comment for
+    # the full rationale and its pocknix-os origin.
+    capability_map_id: retroid_flip2_qam_chord
     # See 01-retroid-controller.yaml's own comment on passthrough - same
     # reason (armada-stick-led's reactive LED mode needs the raw node too).
     passthrough: true
