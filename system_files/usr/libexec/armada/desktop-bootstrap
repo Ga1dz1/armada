@@ -20,13 +20,6 @@ else
     systemctl --user import-environment "${activation_env[@]}" 2>/dev/null || true
 fi
 
-config_dir="${XDG_CONFIG_HOME:-${HOME}/.config}/armada"
-rotation_done="${config_dir}/desktop-rotation.done"
-scale_done="${config_dir}/desktop-scale.done"
-
-[[ ! -e "${rotation_done}" || ! -e "${scale_done}" ]] || exit 0
-mkdir -p "${config_dir}"
-
 if command -v /usr/libexec/armada/device-env >/dev/null 2>&1; then
     eval "$(/usr/libexec/armada/device-env)"
 fi
@@ -36,24 +29,15 @@ panel_orientation="${ARMADA_PANEL_ORIENTATION:-normal}"
 
 [[ -n "${display_connector}" ]] || exit 0
 
-for _ in {1..5}; do
+for _ in {1..30}; do
     kscreen-doctor -o >/dev/null 2>&1 && break
-    sleep 2
+    sleep 1
 done
 
-if [[ ! -e "${rotation_done}" ]]; then
-    case "${panel_orientation}" in
-        left|right|inverted)
-            if kscreen-doctor "output.${display_connector}.rotation.${panel_orientation}" >/dev/null 2>&1; then
-                touch "${rotation_done}"
-            fi
-            ;;
-        *)
-            touch "${rotation_done}"
-            ;;
-    esac
-fi
+case "${panel_orientation}" in
+    left|right|inverted)
+        kscreen-doctor "output.${display_connector}.rotation.${panel_orientation}" >/dev/null 2>&1 || true
+        ;;
+esac
 
-if [[ ! -e "${scale_done}" ]] && kscreen-doctor "output.${display_connector}.scale.1.5" >/dev/null 2>&1; then
-    touch "${scale_done}"
-fi
+kscreen-doctor "output.${display_connector}.scale.1.5" >/dev/null 2>&1 || true

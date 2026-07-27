@@ -98,9 +98,15 @@ dnf5 -y install --setopt=install_weak_deps=False \
     kscreen \
     konsole \
     dolphin \
+    kate \
+    plasma-discover \
     ark \
     gwenview \
-    kwrite
+    kwrite \
+    breeze-gtk \
+    kde-gtk-config \
+    plasma-workspace-wallpapers \
+    breeze-icon-theme
 
 dnf5 -y install --setopt=install_weak_deps=False \
     protonplus \
