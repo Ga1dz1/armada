@@ -41,6 +41,16 @@ few fixes that ended up being generally useful beyond just this one device:
   no device profile applies at all. The menu is built dynamically from
   whatever `sm8250-retroidpocket-*` device trees exist, so any future device
   in that family gets a boot entry automatically.
+
+  > [!NOTE]
+  > [ROCKNIX's ABL](https://github.com/ROCKNIX/abl) (v1.1.6+) now ships a
+  > per-device selection menu for SM8250 too, confirmed working on real
+  > Retroid Pocket Mini V2 hardware. With it flashed, SM8250 devices can boot
+  > straight into the same qcom-abl image as SM8550/8650/8750 instead of
+  > needing the GRUB chainload above. If you're on Mini V2, Retroid Pocket 5,
+  > or Flip 2, please flash this ABL - future updates are moving toward one
+  > unified image for the whole ABL-supported device lineup instead of
+  > separate per-family builds.
 - **A correct fix for Steam's oversized UI scale** on small high-DPI panels -
   the previous approach patched a part of Steam's config that gets recomputed
   from scratch on every launch, so it never survived a restart.
