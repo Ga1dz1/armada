@@ -7,4 +7,12 @@ export XDG_SESSION_DESKTOP=KDE
 export XDG_SESSION_TYPE=wayland
 export KDE_SESSION_VERSION=6
 
+# Ensure the KDE XDG desktop portal backend is available before Plasma/Steam
+# asks for a file chooser. In some boot paths the systemd user session does not
+# auto-activate plasma-xdg-desktop-portal-kde.service in time.
+if ! pgrep -x xdg-desktop-portal-kde >/dev/null 2>&1; then
+    systemctl --user start plasma-xdg-desktop-portal-kde.service 2>/dev/null || \
+        /usr/libexec/xdg-desktop-portal-kde &
+fi
+
 exec /usr/bin/startplasma-wayland
