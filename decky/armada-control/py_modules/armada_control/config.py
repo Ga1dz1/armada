@@ -1,6 +1,7 @@
 from .controller import CONTROLLER_TYPES, controller_type
 from .lighting import stick_led_state
 from .power import factory_power_defaults, parse_power
+from .shared_storage import shared_storage_enabled
 from .steam import installed_games
 from .system import cpu_device_class, os_version, ssh_enabled
 from .tweaks import fex_profile_labels, load_fex_contract, load_tweaks
@@ -20,4 +21,5 @@ def build_config(include_games=True):
         "controllerType": controller_type(),
         "controllerTypes": [{"data": key, "label": label} for key, label in CONTROLLER_TYPES.items()],
         "stickLed": stick_led_state(),
+        "sharedStorageEnabled": shared_storage_enabled(),
     }

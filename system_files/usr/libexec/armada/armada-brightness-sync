@@ -14,7 +14,7 @@ PLASMA_BACKLIGHT="/sys/class/backlight/backlight"
 [[ -r "${PANEL_BACKLIGHT}/brightness" ]] || exit 0
 [[ -r "${PLASMA_BACKLIGHT}/brightness" ]] || exit 0
 
-STATE_DIR="${XDG_RUNTIME_DIR:-/run/user/1000}/armada-brightness"
+STATE_DIR="/run/armada/brightness-sync"
 mkdir -p "${STATE_DIR}"
 LAST_PANEL_FILE="${STATE_DIR}/last-panel"
 LAST_PLASMA_FILE="${STATE_DIR}/last-plasma"

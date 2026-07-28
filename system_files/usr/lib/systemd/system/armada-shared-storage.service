@@ -8,7 +8,7 @@ Before=multi-user.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/libexec/armada/shared-storage-setup
+ExecStart=/usr/libexec/armada/shared-storage-setup start
 ExecStopPost=-/usr/bin/umount -R /var/home/armada/Shared /mnt/shared
 
 [Install]

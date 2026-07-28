@@ -15,11 +15,6 @@ if ! pgrep -x xdg-desktop-portal-kde >/dev/null 2>&1; then
         /usr/libexec/xdg-desktop-portal-kde &
 fi
 
-# Keep game-mode and Plasma desktop brightness in sync. Plasma 6 PowerDevil
-# picks a different backlight device than gamescope/DRM on RP6.
-/usr/libexec/armada/armada-brightness-sync &
-BRIGHTNESS_SYNC_PID=$!
-
 # In Plasma desktop mode the gamepad should act as a mouse/keyboard so the
 # handheld can be navigated without a paired controller. Switch InputPlumber to
 # the desktop profile while Plasma is running and restore the gamepad profile on
@@ -35,7 +30,6 @@ armada_inputplumber_profile() {
 }
 
 cleanup_plasma() {
-    kill "${BRIGHTNESS_SYNC_PID}" 2>/dev/null || true
     armada_inputplumber_profile "${GAMEPAD_PROFILE}"
 }
 trap cleanup_plasma EXIT

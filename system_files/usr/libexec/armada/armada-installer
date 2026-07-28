@@ -887,18 +887,22 @@ gui_install_flow() {
         || exit 0
 
     # Shared exFAT partition: visible to both Android and Armada for ROMs,
-    # media, and downloads. 0 means no shared partition.
+    # media, and downloads. Disabled by default; the user opts in with a check.
+    shared=0
     shared_max=$((acur - ud - 34))
     shared_max=$((shared_max > 0 ? shared_max : 0))
-    default_shared=0
-    (( shared_max >= SHARED_DEFAULT_GIB )) && default_shared=$SHARED_DEFAULT_GIB
-    (( shared_max > 0 && default_shared == 0 )) && default_shared=$((SHARED_MIN_MIB / 1024))
-    shared=0
     if (( shared_max >= SHARED_MIN_MIB )); then
-        shared=$(zenity --scale --title="$GUI_TITLE" --icon="$GUI_ICON" \
-            --text="<b>Choose shared storage size</b>\n\nAn exFAT partition both Android and Armada can use for ROMs, media, and downloads.\nSet to 0 to skip.\n\nFree after Android: <b>${shared_max} GB</b>." \
-            --min-value=0 --max-value="$shared_max" --value="$default_shared" --step=4) \
-            || exit 0
+        if zenity --question --title="$GUI_TITLE" --icon="$GUI_ICON" --width=460 --no-wrap \
+            --ok-label="Enable" --cancel-label="Skip" \
+            --text="<b>Create shared storage?</b>\n\nAn exFAT partition both Android and Armada can use for ROMs, media, and downloads.\n\nFree after Android: <b>${shared_max} GB</b>."; then
+            default_shared=$SHARED_DEFAULT_GIB
+            (( shared_max < default_shared )) && default_shared=$shared_max
+            (( default_shared < SHARED_MIN_MIB / 1024 )) && default_shared=$((SHARED_MIN_MIB / 1024))
+            shared=$(zenity --scale --title="$GUI_TITLE" --icon="$GUI_ICON" \
+                --text="<b>Choose shared storage size</b>\n\nBoth Android and Armada will see this partition." \
+                --min-value=$((SHARED_MIN_MIB / 1024)) --max-value="$shared_max" --value="$default_shared" --step=4) \
+                || exit 0
+        fi
     fi
 
     zenity --question --title="$GUI_TITLE" --icon="$GUI_ICON" --width=480 --no-wrap \
@@ -999,7 +1003,12 @@ cmd_add_shared() {
     root_part=$(resolve_partlabel ARMADA_ROOT)
     root_num=$(printf '%s' "$root_part" | sed 's/.*[^0-9]//')
     while IFS=$'\t' read -r num start_b end_b name; do
-        [[ $num == "$root_num" ]] && { root_start_b=$start_b; root_end_b=$end_b; break; }
+        [[ $num == "$root_num" ]] && { root_start_b=$start_b; root_end_b=$end_b; }
+        # ARMADA_ROOT must be the last partition; nothing can live after it.
+        (( num != root_num && end_b > root_end_b )) && {
+            echo "ERROR: partition #${num} (${name}) lies after ARMADA_ROOT; cannot add shared storage safely" >&2
+            exit 1
+        }
     done < <(list_partitions)
     [[ -n ${root_end_b:-} ]] || { echo "ERROR: could not locate ARMADA_ROOT bounds" >&2; exit 1; }
 

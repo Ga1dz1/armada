@@ -108,6 +108,7 @@ export interface Config {
   game?: GameRef | null;
   selectedGame?: GameRef | null;
   stickLed: StickLedState;
+  sharedStorageEnabled: boolean;
 }
 
 export interface DisplayConnector {

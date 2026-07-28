@@ -1,6 +1,6 @@
 import { Field, ButtonItem, PanelSection } from "@decky/ui";
 import type { Dispatch, SetStateAction } from "react";
-import { setControllerType as applyControllerType, setSshEnabled as applySshEnabled } from "../backend";
+import { setControllerType as applyControllerType, setSharedStorageEnabled as applySharedStorageEnabled, setSshEnabled as applySshEnabled } from "../backend";
 import { openCalibration } from "../components/Calibration";
 import { SelectEdit, ToggleRow } from "../components/widgets";
 import type { Config } from "../types";
@@ -31,6 +31,18 @@ export function Settings({ config, setConfig }: {
       setConfig((current) => (current ? { ...current, controllerType: previous } : current));
     }
   };
+  const setSharedStorageEnabled = async (enabled: boolean) => {
+    if (enabled === !!config.sharedStorageEnabled) {
+      return;
+    }
+    setConfig((current) => (current ? { ...current, sharedStorageEnabled: enabled } : current));
+    try {
+      const applied = await applySharedStorageEnabled(enabled);
+      setConfig((current) => (current ? { ...current, sharedStorageEnabled: applied } : current));
+    } catch (error) {
+      setConfig((current) => (current ? { ...current, sharedStorageEnabled: !enabled } : current));
+    }
+  };
   return (
     <>
       <PanelSection title="Controller">
@@ -44,6 +56,12 @@ export function Settings({ config, setConfig }: {
       </PanelSection>
       <PanelSection title="System">
         <ToggleRow label="Enable SSH" value={!!config.sshEnabled} onChange={setSshEnabled} />
+        <ToggleRow
+          label="Mount shared storage"
+          description="Mount ARMADA_SHARED partition at ~/Shared"
+          value={!!config.sharedStorageEnabled}
+          onChange={setSharedStorageEnabled}
+        />
         <Field label="OS Version" description={config.osVersion || "unknown"} />
       </PanelSection>
     </>

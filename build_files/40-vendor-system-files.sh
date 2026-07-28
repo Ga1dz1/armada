@@ -19,6 +19,7 @@ sed -i '/const allPanels/,$d' /usr/share/plasma/layout-templates/org.kde.plasma.
 sed -i '$r /usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates/armada-pins.js' /usr/share/plasma/layout-templates/org.kde.plasma.desktop.defaultPanel/contents/layout.js
 
 find /etc/NetworkManager/system-connections -name '*.nmconnection' -exec chmod 0600 {} + -exec chown root:root {} + 2>/dev/null || true
+chmod 0440 /etc/sudoers.d/armada-shared-storage 2>/dev/null || true
 
 systemctl disable getty@tty1.service || true
 systemctl disable sshd.service || true
@@ -31,6 +32,7 @@ systemctl enable inputplumber.service
 systemctl enable armada-device-quirks.service
 systemctl enable armada-first-boot-reboot.service
 systemctl enable armada-stick-led.service
+systemctl enable armada-brightness-sync.service
 systemctl enable armada-fixups.service
 systemctl enable armada-installer-visibility.service
 systemctl enable armada-steamapps.service
