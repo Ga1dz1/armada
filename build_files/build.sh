@@ -4,6 +4,7 @@ set -euxo pipefail
 cd /ctx/build_files
 
 ./10-base-packages.sh
+./15-steamdeck-theme.sh
 ./20-install-kernel.sh
 ./30-install-steam-session.sh
 ./35-install-emulators.sh

@@ -13,8 +13,10 @@ const SIZE = 96;
 const CENTER = SIZE / 2;
 const DOT_RADIUS = 10;
 const RING_RADIUS = SIZE / 2 - DOT_RADIUS - 4;
-// N, E, S, W - matches stick-led-color's zone numbering (1-4 clockwise from top).
-const ZONE_ANGLES = [-90, 0, 90, 180];
+// Two dots on top, two on the bottom - matches the physical HTR3212 ring
+// layout (zones 1=SW, 2=NW, 3=NE, 4=SE) when the stick is viewed from above.
+// Ordered clockwise: NE (top-right), SE (bottom-right), SW (bottom-left), NW (top-left).
+const ZONE_ANGLES = [-45, 45, 135, 225];
 
 function rgbCss([r, g, b]: [number, number, number], alpha = 1): string {
   return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${alpha})`;

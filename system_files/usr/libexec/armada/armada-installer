@@ -11,8 +11,8 @@ BOOT_MIB=1024
 # Floor, not target: enough for two bootc deployments plus OTA staging headroom.
 ROOT_MIN_MIB=$((32 * 1024))
 ANDROID_MIN_MIB=$((8 * 1024))
-# Default shared exFAT partition size for fresh installs (32 GiB).
-SHARED_DEFAULT_GIB=32
+# Default shared exFAT partition size for fresh installs (64 GiB).
+SHARED_DEFAULT_GIB=64
 SHARED_MIN_MIB=$((4 * 1024))
 destructive=0
 TARGET=""
@@ -886,12 +886,27 @@ gui_install_flow() {
         --min-value="$amin" --max-value="$amax" --value="$default_android" --step=4) \
         || exit 0
 
+    # Shared exFAT partition: visible to both Android and Armada for ROMs,
+    # media, and downloads. 0 means no shared partition.
+    shared_max=$((acur - ud - 34))
+    shared_max=$((shared_max > 0 ? shared_max : 0))
+    default_shared=0
+    (( shared_max >= SHARED_DEFAULT_GIB )) && default_shared=$SHARED_DEFAULT_GIB
+    (( shared_max > 0 && default_shared == 0 )) && default_shared=$((SHARED_MIN_MIB / 1024))
+    shared=0
+    if (( shared_max >= SHARED_MIN_MIB )); then
+        shared=$(zenity --scale --title="$GUI_TITLE" --icon="$GUI_ICON" \
+            --text="<b>Choose shared storage size</b>\n\nAn exFAT partition both Android and Armada can use for ROMs, media, and downloads.\nSet to 0 to skip.\n\nFree after Android: <b>${shared_max} GB</b>." \
+            --min-value=0 --max-value="$shared_max" --value="$default_shared" --step=4) \
+            || exit 0
+    fi
+
     zenity --question --title="$GUI_TITLE" --icon="$GUI_ICON" --width=480 --no-wrap \
         --ok-label="Install" --cancel-label="Cancel" \
-        --text="<b>Ready to install</b>\n\nAndroid:  <b>${ud} GB</b>\nArmada:  <b>$((acur - ud)) GB</b>\n\nResizing Android <b>factory-resets it</b>: you lose installed apps and data (the Android system is kept).\n\nThis <b>can't be undone</b> without a PC." \
+        --text="<b>Ready to install</b>\n\nAndroid:  <b>${ud} GB</b>\nArmada:  <b>$((acur - ud - shared)) GB</b>\nShared:  <b>${shared} GB</b>\n\nResizing Android <b>factory-resets it</b>: you lose installed apps and data (the Android system is kept).\n\nThis <b>can't be undone</b> without a PC." \
         || exit 0
 
-    gui_run "Installing Armada, do not power off…" install --assume-yes --userdata-gib "$ud" \
+    gui_run "Installing Armada, do not power off…" install --assume-yes --userdata-gib "$ud" --shared-gib "$shared" \
         || gui_die "Install failed (details in ${GUI_LOG}).\n\nIf internal storage was modified, recover with a PC:\n  fastboot erase ROCKNIX"
     gui_offer_poweroff "<b>Install complete.</b>\n\nPower off, remove the SD card, then power on."
 }
@@ -951,6 +966,121 @@ cmd_gui() {
     esac
 }
 
+cmd_add_shared() {
+    local root_gib="" shared_gib=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -y|--assume-yes) ASSUME_YES=1 ;;
+            --root-gib) root_gib="${2:-}"; shift ;;
+            --root-gib=*) root_gib="${1#*=}" ;;
+            --shared-gib) shared_gib="${2:-}"; shift ;;
+            --shared-gib=*) shared_gib="${1#*=}" ;;
+            *) echo "ERROR: unknown argument: $1" >&2; exit 2 ;;
+        esac
+        shift
+    done
+
+    need_root
+    need_cmds
+    check_device
+    refuse_self
+    trap cleanup EXIT
+    inhibit_sleep
+
+    detect_mode
+    [[ $mode == occupied ]] || { echo "ERROR: no existing Linux install found on $DEVICE" >&2; exit 1; }
+    find_userdata
+    collect_our_tail
+    (( has_armada_root )) || { echo "ERROR: no Armada install found on $DEVICE" >&2; exit 1; }
+    (( has_armada_shared )) && { echo "ERROR: ARMADA_SHARED already exists on $DEVICE" >&2; exit 1; }
+
+    # Locate ARMADA_ROOT by label.
+    local root_part root_num root_start_b root_end_b
+    root_part=$(resolve_partlabel ARMADA_ROOT)
+    root_num=$(printf '%s' "$root_part" | sed 's/.*[^0-9]//')
+    while IFS=$'\t' read -r num start_b end_b name; do
+        [[ $num == "$root_num" ]] && { root_start_b=$start_b; root_end_b=$end_b; break; }
+    done < <(list_partitions)
+    [[ -n ${root_end_b:-} ]] || { echo "ERROR: could not locate ARMADA_ROOT bounds" >&2; exit 1; }
+
+    local disk_bytes last_byte
+    disk_bytes=$(blockdev --getsize64 "$DEVICE")
+    last_byte=$((disk_bytes - 1))
+    # Keep a small margin at the very end of the disk for partition alignment.
+    local max_shared_mib=$(( (last_byte - root_end_b) / 1048576 - 1 ))
+    (( max_shared_mib >= SHARED_MIN_MIB )) || { echo "ERROR: not enough free space after ARMADA_ROOT for a shared partition" >&2; exit 1; }
+    local max_shared_gib=$((max_shared_mib / 1024))
+    local min_root_gib=$(( (root_end_b - root_start_b + 1048575) / 1048576 / 1024 ))
+
+    if [[ -n $root_gib && -n $shared_gib ]]; then
+        echo "ERROR: specify either --root-gib or --shared-gib, not both" >&2
+        exit 2
+    fi
+
+    if [[ -n $root_gib ]]; then
+        [[ $root_gib =~ ^[0-9]+$ ]] || { echo "ERROR: --root-gib must be an integer" >&2; exit 2; }
+        shared_gib=$((min_root_gib - root_gib + max_shared_gib))
+    fi
+
+    if [[ -n $shared_gib ]]; then
+        [[ $shared_gib =~ ^[0-9]+$ ]] || { echo "ERROR: --shared-gib must be an integer" >&2; exit 2; }
+        if (( shared_gib < 0 || shared_gib > max_shared_gib )); then
+            echo "ERROR: --shared-gib ${shared_gib} out of range (0 .. ${max_shared_gib})" >&2
+            exit 2
+        fi
+    else
+        local default_shared=$SHARED_DEFAULT_GIB
+        (( max_shared_gib < default_shared )) && default_shared=$max_shared_gib
+        while :; do
+            read -rp "Shared storage size in GiB [0 to skip, max ${max_shared_gib}, default ${default_shared}]: " shared_gib
+            shared_gib=${shared_gib:-$default_shared}
+            [[ $shared_gib =~ ^[0-9]+$ ]] || { echo "  enter an integer"; continue; }
+            (( shared_gib >= 0 && shared_gib <= max_shared_gib )) || { echo "  out of range: 0 .. ${max_shared_gib}"; continue; }
+            break
+        done
+    fi
+
+    (( shared_gib == 0 )) && { echo "Skipping shared partition creation."; exit 0; }
+
+    local new_root_end_mib=$(( (root_end_b / 1048576) - (shared_gib * 1024) ))
+    local new_root_gib=$(( (new_root_end_mib - root_start_b / 1048576) / 1024 ))
+    (( new_root_gib >= ROOT_MIN_MIB / 1024 )) || { echo "ERROR: root would be too small (${new_root_gib} GiB); use a smaller shared size" >&2; exit 1; }
+
+    cat <<EOF
+
+Plan:
+  Shrink ARMADA_ROOT to: ${new_root_gib} GiB
+  Create ARMADA_SHARED:  ${shared_gib} GiB
+
+This is irreversible without a PC. Make sure $DEVICE is the internal storage
+and you are booted from the SD card (not from internal).
+EOF
+    confirm "Proceed?" || { echo "Aborted."; exit 0; }
+
+    local target
+    target=$(mktemp -d -t armada-add-shared.XXXXXX)
+    mount -o "${BTRFS_OPTS},subvol=root" "$root_part" "$target"
+    # Shrink the btrfs filesystem before the partition.
+    btrfs filesystem resize "${new_root_end_mib}M" "$target"
+    umount "$target"
+    rmdir "$target"
+
+    destructive=1
+    parted -a optimal -s "$DEVICE" resizepart "$root_num" "${new_root_end_mib}MiB"
+    local shared_num=$((root_num + 1))
+    parted -a optimal -s "$DEVICE" mkpart primary fat32 "${new_root_end_mib}MiB" "100%"
+    parted -s "$DEVICE" name "$shared_num" ARMADA_SHARED
+    partprobe "$DEVICE" || true
+    udevadm settle
+
+    local shared_part
+    shared_part=$(resolve_partlabel ARMADA_SHARED)
+    [[ -b $shared_part ]] || { echo "ERROR: $shared_part did not appear after partitioning" >&2; exit 1; }
+    mkfs.exfat -L ARMADA_SHARED "$shared_part" >/dev/null
+
+    echo "ARMADA_SHARED (${shared_gib} GiB) created. Reboot to use it."
+}
+
 usage() {
     cat >&2 <<EOF
 Usage: armada-installer <command>
@@ -960,6 +1090,12 @@ Usage: armada-installer <command>
   install [opts]   fresh install of the running image to internal storage
                      -y, --assume-yes        skip prompts
                      --userdata-gib N         new Android userdata size
+                     --shared-gib N           exFAT shared partition size (0 to skip)
+                     --no-shared              do not create a shared partition
+  add-shared       shrink the existing Armada root and add ARMADA_SHARED
+                     (run while booted from SD card, not internal storage)
+                     --shared-gib N           size of the new shared partition
+                     --root-gib N             new root size (shared is the remainder)
   reset [opts]     remove ROCKNIX/Armada and grow Android back to full disk
                      -y, --assume-yes        skip prompts
 EOF
@@ -972,6 +1108,7 @@ case "$cmd" in
     gui) cmd_gui "$@" ;;
     detect) cmd_detect "$@" ;;
     install) cmd_install "$@" ;;
+    add-shared) cmd_add_shared "$@" ;;
     reset) cmd_reset "$@" ;;
     -h|--help|help|"") usage ;;
     *) echo "ERROR: unknown command: $cmd" >&2; usage ;;

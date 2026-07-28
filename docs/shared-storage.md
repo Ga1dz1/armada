@@ -96,6 +96,11 @@ bind-mounts it to `/var/home/armada/Shared` with `uid=1000,gid=1000,umask=000`
 so both Android and the Armada user can read/write media, ROMs, and downloads.
 If the partition is absent, the service silently does nothing.
 
+The Armada Installer GUI asks for the shared partition size during a fresh
+internal install.  Choose `0` to skip it entirely.  For an existing internal
+install, boot from the SD card and run `armada-installer add-shared` to shrink
+the Armada root partition and create `ARMADA_SHARED` without losing data.
+
 This gives the user the "common usage" they asked for without breaking Android,
 without requiring root on Android, and without trying to use an encrypted
 partition as `/home`.
