@@ -81,6 +81,7 @@ export interface StickLedSideState {
   chase: boolean;
   compass: boolean;
   seesaw: boolean;
+  flip: boolean;
   params: Record<string, number>;
 }
 

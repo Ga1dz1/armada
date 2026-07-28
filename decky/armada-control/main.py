@@ -25,6 +25,7 @@ from armada_control.lighting import (
     set_stick_led_param,
     set_stick_led_screen_link,
     set_stick_led_seesaw,
+    set_stick_led_flip,
 )
 from armada_control.power import save_power_config
 from armada_control.shared_storage import set_shared_storage_enabled
@@ -99,6 +100,9 @@ class Plugin:
 
     async def set_stick_led_seesaw(self, side, enabled):
         return await asyncio.to_thread(set_stick_led_seesaw, side, enabled)
+
+    async def set_stick_led_flip(self, side, enabled):
+        return await asyncio.to_thread(set_stick_led_flip, side, enabled)
 
     async def set_stick_led_enabled(self, enabled):
         return await asyncio.to_thread(set_stick_led_enabled, enabled)

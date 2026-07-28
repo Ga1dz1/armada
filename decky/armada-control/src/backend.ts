@@ -41,6 +41,8 @@ export const setStickLedCompass = (side: "l" | "r", enabled: boolean) =>
   call<[string, boolean], StickLedState>("set_stick_led_compass", side, enabled);
 export const setStickLedSeesaw = (side: "l" | "r", enabled: boolean) =>
   call<[string, boolean], StickLedState>("set_stick_led_seesaw", side, enabled);
+export const setStickLedFlip = (side: "l" | "r", enabled: boolean) =>
+  call<[string, boolean], StickLedState>("set_stick_led_flip", side, enabled);
 export const setStickLedEnabled = (enabled: boolean) =>
   call<[boolean], StickLedState>("set_stick_led_enabled", enabled);
 export const setStickLedMaxBrightness = (value: number) =>

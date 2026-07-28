@@ -44,6 +44,7 @@ def _default_side_state():
         "chase": False,
         "compass": False,
         "seesaw": False,
+        "flip": False,
         "params": {},
     }
 
@@ -72,6 +73,7 @@ def _coerce_side(raw):
         "chase": bool(raw.get("chase", False)),
         "compass": bool(raw.get("compass", False)),
         "seesaw": bool(raw.get("seesaw", False)),
+        "flip": bool(raw.get("flip", False)),
         "params": {k: float(v) for k, v in dict(raw.get("params") or {}).items()},
     }
 
@@ -130,6 +132,8 @@ def _parse_cli_output(out):
             s["compass"] = value == "1"
         elif base == "seesaw":
             s["seesaw"] = value == "1"
+        elif base == "flip":
+            s["flip"] = value == "1"
         elif "_" in base and base.split("_", 1)[0] in STICK_LED_PARAMS:
             try:
                 s["params"][base] = float(value)
@@ -274,4 +278,11 @@ def set_stick_led_seesaw(side, enabled):
     if side not in STICK_SIDES:
         raise ValueError("invalid stick side")
     call("set_stick_led_seesaw", side=side, enabled=bool(enabled))
+    return stick_led_state()
+
+
+def set_stick_led_flip(side, enabled):
+    if side not in STICK_SIDES:
+        raise ValueError("invalid stick side")
+    call("set_stick_led_flip", side=side, enabled=bool(enabled))
     return stick_led_state()

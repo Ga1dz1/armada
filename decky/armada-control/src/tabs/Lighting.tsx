@@ -16,6 +16,7 @@ import {
   setStickLedEnabled as applyStickLedEnabled,
   setStickLedMaxBrightness as applyStickLedMaxBrightness,
   setStickLedSeesaw as applyStickLedSeesaw,
+  setStickLedFlip as applyStickLedFlip,
 } from "../backend";
 import { ColorPicker } from "../components/ColorPicker";
 import { ModePreview } from "../components/ModePreview";
@@ -389,6 +390,7 @@ export function Lighting({ config, setConfig }: {
   const setStickLedChase = makeToggleSetter("chase", applyStickLedChase);
   const setStickLedCompass = makeToggleSetter("compass", applyStickLedCompass);
   const setStickLedSeesaw = makeToggleSetter("seesaw", applyStickLedSeesaw);
+  const setStickLedFlip = makeToggleSetter("flip", applyStickLedFlip);
 
   if (!stickLed?.supported || !sideState) {
     return (
@@ -559,6 +561,12 @@ export function Lighting({ config, setConfig }: {
           />
         </>
       )}
+      <ToggleRow
+        label="Flip stick ring"
+        description="Rotate the LED ring 180° for stick variants wired upside-down (fixes compass/direction on some RP6 units)"
+        value={!!sideState.flip}
+        onChange={setStickLedFlip}
+      />
         </>
       )}
     </PanelSection>
