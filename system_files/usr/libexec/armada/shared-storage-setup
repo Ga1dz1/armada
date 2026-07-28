@@ -1,0 +1,34 @@
+#!/usr/bin/bash
+# Mount a shared exFAT partition labeled ARMADA_SHARED into the armada user's
+# home as ~/Shared. This partition is meant to be created by the installer from
+# free space taken from Android userdata; if it does not exist, the service
+# simply skips mounting.
+set -euo pipefail
+
+MOUNT_POINT=/mnt/shared
+SHARE_DIR=/var/home/armada/Shared
+LABEL=ARMADA_SHARED
+
+if [[ -z "${LABEL}" ]]; then
+    exit 0
+fi
+
+# Already mounted? Nothing to do.
+if findmnt -n -o TARGET -- "${SHARE_DIR}" >/dev/null 2>&1; then
+    exit 0
+fi
+
+if ! [[ -L "/dev/disk/by-label/${LABEL}" ]]; then
+    echo "Shared storage partition labeled '${LABEL}' not found; skipping." >&2
+    exit 0
+fi
+
+mkdir -p "${MOUNT_POINT}"
+
+# exFAT does not support POSIX ownership, so force everything to the armada
+# user so KDE/Steam apps can read/write without permission issues.
+mount -o "uid=1000,gid=1000,umask=000,noatime" \
+      "/dev/disk/by-label/${LABEL}" "${MOUNT_POINT}"
+
+mkdir -p "${SHARE_DIR}"
+mount --bind "${MOUNT_POINT}" "${SHARE_DIR}"

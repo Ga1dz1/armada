@@ -50,6 +50,7 @@ systemctl enable armada-steamos-manager.service
 systemctl --global enable armada-steamos-manager.service
 systemctl enable armada-bootimg-sync.service
 systemctl enable armada-flatpak-setup.service
+systemctl enable armada-shared-storage.service
 systemctl enable armada-waydroid-input.path
 # waydroid-container.service would auto-start Waydroid's LXC session on
 # every boot; leave it opt-in (launched by Waydroid's own UI/CLI) rather

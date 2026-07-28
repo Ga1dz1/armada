@@ -49,6 +49,7 @@ dnf5 -y install --setopt=install_weak_deps=False \
     btrfs-progs \
     parted \
     gdisk \
+    exfatprogs \
     binutils \
     blas \
     bzip2-libs \
