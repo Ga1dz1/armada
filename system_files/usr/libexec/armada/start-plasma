@@ -15,4 +15,8 @@ if ! pgrep -x xdg-desktop-portal-kde >/dev/null 2>&1; then
         /usr/libexec/xdg-desktop-portal-kde &
 fi
 
+# Keep game-mode and Plasma desktop brightness in sync. Plasma 6 PowerDevil
+# picks a different backlight device than gamescope/DRM on RP6.
+/usr/libexec/armada/armada-brightness-sync &
+
 exec /usr/bin/startplasma-wayland
