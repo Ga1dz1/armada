@@ -18,5 +18,28 @@ fi
 # Keep game-mode and Plasma desktop brightness in sync. Plasma 6 PowerDevil
 # picks a different backlight device than gamescope/DRM on RP6.
 /usr/libexec/armada/armada-brightness-sync &
+BRIGHTNESS_SYNC_PID=$!
 
-exec /usr/bin/startplasma-wayland
+# In Plasma desktop mode the gamepad should act as a mouse/keyboard so the
+# handheld can be navigated without a paired controller. Switch InputPlumber to
+# the desktop profile while Plasma is running and restore the gamepad profile on
+# exit.
+DESKTOP_PROFILE="/usr/share/inputplumber/profiles/mouse_keyboard_wasd.yaml"
+GAMEPAD_PROFILE="/usr/share/inputplumber/profiles/default.yaml"
+IPLUMBER_DEVICE="/org/shadowblip/InputPlumber/CompositeDevice0"
+IPLUMBER_IFACE="org.shadowblip.Input.CompositeDevice"
+
+armada_inputplumber_profile() {
+    local profile="$1"
+    busctl --system call org.shadowblip.InputPlumber "${IPLUMBER_DEVICE}" "${IPLUMBER_IFACE}" LoadProfilePath s "${profile}" >/dev/null 2>&1 || true
+}
+
+cleanup_plasma() {
+    kill "${BRIGHTNESS_SYNC_PID}" 2>/dev/null || true
+    armada_inputplumber_profile "${GAMEPAD_PROFILE}"
+}
+trap cleanup_plasma EXIT
+
+armada_inputplumber_profile "${DESKTOP_PROFILE}"
+
+/usr/bin/startplasma-wayland
