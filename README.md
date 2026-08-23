@@ -1,35 +1,45 @@
-# Armada has moved → [**Nebel**](https://github.com/Ga1dz1/nebel)
+# This fork is archived — development continues as [**Nebel**](https://github.com/Ga1dz1/nebel)
 
 **English**
 
-Armada is no longer developed here. The project continues as
-[**Nebel**](https://github.com/Ga1dz1/nebel) — the same SteamOS-like Fedora
-bootc OS for ARM64 handhelds, but the codebases and release pipelines have
-diverged far enough that keeping both under one name stopped making sense.
+This repository was a fork of
+[virtudude/armada](https://github.com/virtudude/armada). Over time our tree
+diverged too far from upstream — different userspace plumbing, drivers,
+release pipeline, update channel — to sensibly remain a fork or be merged
+back. Development therefore continues as a standalone project:
 
 - **New repo:** https://github.com/Ga1dz1/nebel
-- **OTA updates** for existing installs now ship from
+- **OTA updates** for installs from this fork now ship from
   `ghcr.io/ga1dz1/nebel` (signed, verified on-device).
 - **v4** is the first Nebel release — see its release notes there.
 
-This repository is archived (read-only) and kept for history. No further
-commits, issues, or pull requests will be accepted here.
+Upstream Armada lives on at
+[virtudude/armada](https://github.com/virtudude/armada) — check it out if
+that's the lineage you're after.
+
+This fork is archived (read-only) and kept for history. No further commits,
+issues, or pull requests will be accepted here.
 
 ---
 
-# Armada переїхала → [**Nebel**](https://github.com/Ga1dz1/nebel)
+# Форк заархівовано — розробка триває як [**Nebel**](https://github.com/Ga1dz1/nebel)
 
 **Українською**
 
-Armada більше не розробляється тут. Проєкт продовжується як
-[**Nebel**](https://github.com/Ga1dz1/nebel) — та сама SteamOS-подібна ОС на
-Fedora bootc для ARM64-портативок, але кодові бази й конвеєри релізів
-розійшлися настільки, що тримати їх під одним іменем більше не мало сенсу.
+Цей репозиторій був форком
+[virtudude/armada](https://github.com/virtudude/armada). З часом наше
+дерево розійшлося з апстрімом надто далеко — інша сантехніка юзерспейсу,
+драйвери, конвеєр релізів, канал оновлень, — щоб розумно лишатися форком чи
+повертатися назад. Тому розробка триває як окремий проєкт:
 
 - **Новий репозиторій:** https://github.com/Ga1dz1/nebel
-- **OTA-оновлення** для наявних установок тепер надходять із
+- **OTA-оновлення** для установок із цього форка тепер надходять із
   `ghcr.io/ga1dz1/nebel` (підписані, з перевіркою на пристрої).
 - **v4** — перший реліз Nebel, деталі в його release notes.
 
-Цей репозиторій заархівовано (лише для читання) і збережено заради історії.
-Нові коміти, issues та pull requests тут більше не приймаються.
+Апстрімова Armada живе далі на
+[virtudude/armada](https://github.com/virtudude/armada) — якщо вам потрібна
+саме та гілка, вам туди.
+
+Цей форк заархівовано (лише для читання) і збережено заради історії. Нові
+коміти, issues та pull requests тут більше не приймаються.
